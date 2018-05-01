@@ -3,6 +3,15 @@ import json
 import time
 from mongoengine import *
 import datetime
+from flask import Flask
+from flask import abort, redirect, url_for, request, jsonify
+
+connect()
+settings = json.load(open('settings.json'))
+
+webKey = settings['webKey']
+
+app = Flask(__name__)
 
 class Game(Document):
   name = StringField(required=True)
@@ -20,7 +29,6 @@ class Player:
   profileURI = None
   steamId = None
 
-
 class bcolors:
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
@@ -31,18 +39,14 @@ class bcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
-connect()
+
 
 # basic uri and auth stuff
 steamOwnedGamesBaseURI = 'https://api.steampowered.com/'
 steamGameInfoBaseURI = 'http://store.steampowered.com/api/'
 steamPlayerInfoBaseURI = 'http://api.steampowered.com'
-webKey = 'D3BEDD72E482E250E0D1F0C292820FC1'
 
 nullCategory = {"id":0,"description":"This Game has No Categories"}
-
-player1 = 76561197974992588
-player2 = 76561197992128845
 
 def gameToDict(game):
   dict = {}
@@ -51,6 +55,19 @@ def gameToDict(game):
     dict['appid'] = int(boop.appid)
     dict['categories'] = boop.categories
   return dict
+
+def playersToDict(players):
+  playerList = []
+  for player in players:
+    dict = {}
+    print(player.name)
+    dict['name'] = player.name
+    dict['avatarURI'] = player.avatarURI
+    dict['profileURI'] = player.profileURI
+    dict['steamid'] = player.steamId
+    playerList.append(dict)
+  return playerList
+
 
 def zipLists(a, b):
   zipped = []
@@ -67,14 +84,16 @@ def zipLists(a, b):
 
 
 def buildUserGameList(id, debug=False):
+  print("Debug1")
   gameList = []
   userListRaw = requests.get(steamOwnedGamesBaseURI + '/IPlayerService/GetOwnedGames/v1/?key=' +
                             webKey + '&steamId=' + str(id) + '&include_appinfo=1&include_played_free_games=&format=json')
-
+  print("debug2")
   #Use this to tell which game(s) break on a steam library
   #f = open("debug.txt", 'w')
   #f.write(userListRaw.text)
   userListJSON = json.loads(userListRaw.text)
+  print("debug3")
   if userListJSON['response'] == {}:
     brokenBoi = getPlayerData(id)
     print(brokenBoi[0].name + " needs to update their profile settings here: https://steamcommunity.com/profiles/" + str(brokenBoi[0].steamid) + "/edit/settings")
@@ -146,9 +165,9 @@ def getPlayerData(player1, player2=None):
     user = userDataRaw['response']['players'][0]
     player = Player()
     player.name = user['personaname']
-    player.steamid = user['steamid']
-    player.profileuri =user['profileurl']
-    player.avataruri = user['avatarfull']
+    player.steamId = user['steamid']
+    player.profileURI =user['profileurl']
+    player.avatarURI = user['avatarfull']
     players.append(player)
     return players
   elif player2 != None:
@@ -157,15 +176,63 @@ def getPlayerData(player1, player2=None):
     for user in userDataRaw['response']['players']:
       player = Player()
       player.name = user['personaname']
-      player.steamid = user['steamid']
-      player.profileuri =user['profileurl']
-      player.avataruri = user['avatarfull']
+      player.steamId = user['steamid']
+      player.profileURI =user['profileurl']
+      player.avatarURI = user['avatarfull']
       players.append(player)
     return players
 
+@app.errorhandler(404)
+def page_not_found(error):
+    return 'This page does not exist', 404
 
+@app.errorhandler(400)
+def bad_request(error):
+    return 'You need to give exactly two users', 400
 
+@app.errorhandler(401)
+def bad_request(error):
+    return 'You did not provide a json payload', 401
 
+@app.route('/steamcompare/full', methods=['POST'])
+def fullCompare():
+  print("We are starting a full comparison")
+  if request.data:
+    players = request.get_json(force=True)
+    if len(players) != 2:
+      abort(400)
+    print(players['player1'])
+    print('getting player 1 list')
+    playerList1 = buildUserGameList(int(players["player1"]))
+    print('getting player 2 list')
+    playerList2 = buildUserGameList(int(players["player2"]))
+    print('got lists')
+    playerData = getPlayerData(players["player1"], players["player2"])
+    zipped = zipLists(playerList1, playerList2)
+    coop = []
+    multi = []
+    useless = []
+    master = {}
+    for game in zipped:
+      list = determineProperList(game)
+      #print(game['name'] + " has a score of " + str(list))
+      if list == 1 or list == 3:
+        coop.append(game)
+      elif list == 2 or list == 3:
+        multi.append(game)
+      elif list == 0:
+        useless.append(game)
+      else:
+        print("the value of list was " + str(list) + "...")
+    master['players'] = playersToDict(playerData)
+    print(playersToDict(playerData))
+    master['coop'] = coop
+    master['multi'] = multi
+    master['useless'] = useless
+    return jsonify(master)
+  else:
+    abort(401)
+'''
 playerList1 = buildUserGameList(player1)
 playerList2 = buildUserGameList(player2)
 
@@ -194,4 +261,4 @@ for game in zipped:
 
 print(bcolors.BOLD + bcolors.FAIL + 'Info for Games Shared Between ' + players[0].name + ' & ' + players[1].name + bcolors.ENDC)
 printSharedGames(coop, multi, useless)
-
+'''
