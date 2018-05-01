@@ -84,20 +84,18 @@ def zipLists(a, b):
 
 
 def buildUserGameList(id, debug=False):
-  print("Debug1")
   gameList = []
   userListRaw = requests.get(steamOwnedGamesBaseURI + '/IPlayerService/GetOwnedGames/v1/?key=' +
                             webKey + '&steamId=' + str(id) + '&include_appinfo=1&include_played_free_games=&format=json')
-  print("debug2")
   #Use this to tell which game(s) break on a steam library
   #f = open("debug.txt", 'w')
   #f.write(userListRaw.text)
   userListJSON = json.loads(userListRaw.text)
-  print("debug3")
   if userListJSON['response'] == {}:
     brokenBoi = getPlayerData(id)
-    print(brokenBoi[0].name + " needs to update their profile settings here: https://steamcommunity.com/profiles/" + str(brokenBoi[0].steamid) + "/edit/settings")
+    print(brokenBoi[0].name + " needs to update their profile settings here: https://steamcommunity.com/profiles/" + str(brokenBoi[0].steamId) + "/edit/settings")
     print("They need to set their 'Game Details' to 'Public'")
+    return 2
   else:
     userGames = userListJSON['response']['games']
     totalGames = len(userGames)
@@ -196,18 +194,37 @@ def bad_request(error):
 
 @app.route('/steamcompare/full', methods=['POST'])
 def fullCompare():
+  response = {}
+  player1 = None
+  player2 = None
   print("We are starting a full comparison")
   if request.data:
     players = request.get_json(force=True)
+    if int(players["player1"]) > int(players["player2"]):
+      print ("We're swapping")
+      player1 = players['player2']
+      player2 = players['player1']
+    elif int(players["player1"]) < int(players["player2"]):
+      print ("no swaps needed")
+      player1 = players["player1"]
+      player2 = players["player2"]
+    elif players["player1"] == players["player2"]:
+      return "you put in the same player twice", 400
     if len(players) != 2:
       abort(400)
-    print(players['player1'])
-    print('getting player 1 list')
-    playerList1 = buildUserGameList(int(players["player1"]))
-    print('getting player 2 list')
-    playerList2 = buildUserGameList(int(players["player2"]))
-    print('got lists')
-    playerData = getPlayerData(players["player1"], players["player2"])
+    playerList1 = buildUserGameList(int(player1))
+    playerList2 = buildUserGameList(int(player2))
+    playerData = getPlayerData(player1, player2)
+
+    print("Player 1 is: " + playerData[0].name)
+    print("Player 2 is: " + playerData[1].name)
+    if playerList1 == 2:
+      print("Player 1 is bad!")
+      response['player1'] = playerData[0].name + ' needs to set their "Game details" to public here: ' + playerData[0].profileURI + '/edit/settings'
+    if playerList2 == 2:
+      response['player2'] = playerData[1].name + ' needs to set their "Game details" to public here: ' + playerData[1].profileURI + '/edit/settings'
+    if response != {}:
+      return jsonify(response), 406
     zipped = zipLists(playerList1, playerList2)
     coop = []
     multi = []
