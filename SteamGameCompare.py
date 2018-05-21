@@ -13,16 +13,14 @@ webKey = settings['webKey']
 
 app = Flask(__name__)
 
+#Schema for adding games to the DB
 class Game(Document):
   name = StringField(required=True)
   appid = DecimalField(required=True)
   categories = ListField(required=True)
   date_modified = DateTimeField(default=datetime.datetime.utcnow)
 
-class User(Document):
-  name = ListField(required=True)
-  steamID = StringField(required=True)
-
+#Schema for player Object, maybe will add to DB eventually
 class Player:
   name = None
   avatarURI = None
@@ -46,6 +44,7 @@ steamOwnedGamesBaseURI = 'https://api.steampowered.com/'
 steamGameInfoBaseURI = 'http://store.steampowered.com/api/'
 steamPlayerInfoBaseURI = 'http://api.steampowered.com'
 
+#A filler DB entry for games that have no categories
 nullCategory = {"id":0,"description":"This Game has No Categories"}
 
 def gameToDict(game):
@@ -85,22 +84,24 @@ def zipLists(a, b):
 def buildQuickGameList(id):
   userListRaw = requests.get(steamOwnedGamesBaseURI + '/IPlayerService/GetOwnedGames/v1/?key=' +
                             webKey + '&steamId=' + str(id) + '&include_appinfo=1&include_played_free_games=&format=json')
-  userList = json.loads(userListRaw.text)
+  userListJSON = json.loads(userListRaw.text)
   if userListJSON['response'] == {}:
     brokenBoi = getPlayerData(id)
     print(brokenBoi[0].name + " needs to update their profile settings here: https://steamcommunity.com/profiles/" + str(brokenBoi[0].steamId) + "/edit/settings")
     print("They need to set their 'Game Details' to 'Public'")
     return 2
-  return userList
+  return userListJSON
 
+#This is the "Full Compare."" Basically it gets the user's owned games, then checks the local DB for it, and grabs details of it doesn't exist in the DB
 def buildUserGameList(id, debug=False):
   gameList = []
   userListRaw = requests.get(steamOwnedGamesBaseURI + '/IPlayerService/GetOwnedGames/v1/?key=' +
                             webKey + '&steamId=' + str(id) + '&include_appinfo=1&include_played_free_games=&format=json')
-  #Use this to tell which game(s) break on a steam library
+  #Use this to tell which game(s) break on a steam library (SHould no longer be needed, but keeping it just in case)
   #f = open("debug.txt", 'w')
   #f.write(userListRaw.text)
   userListJSON = json.loads(userListRaw.text)
+  #This is a check to see if the user has their game visibility set to public, and returns 2 if they are not
   if userListJSON['response'] == {}:
     brokenBoi = getPlayerData(id)
     print(brokenBoi[0].name + " needs to update their profile settings here: https://steamcommunity.com/profiles/" + str(brokenBoi[0].steamId) + "/edit/settings")
@@ -111,11 +112,14 @@ def buildUserGameList(id, debug=False):
     totalGames = len(userGames)
     gameCursor = 0
     for game in userGames:
+      #This is/was for console output - Mostly because as of writing this, there's no frontend and sending people JSON is not as...parseable
       print(f"{gameCursor/totalGames*100:.1f} %", end="\r")
       gameCursor += 1
       userAppId = str(game['appid'])
+      #Search the mongoDB for the game's appID
       if Game.objects(appid=userAppId):
         gameList.append(gameToDict(Game.objects(appid=userAppId)))
+      #Go grab the game details since we don't have it locally
       else:
           r = requests.get(steamGameInfoBaseURI + 'appdetails?appids=' + userAppId)
           gameInfo = json.loads(r.text)
@@ -204,7 +208,7 @@ def bad_request(error):
 
 @app.route('/steamcompare/full', methods=['POST'])
 def fullCompare():
-  response = {}
+  errorResponse = {}
   player1 = Player()
   player2 = Player()
   print("We are starting a full comparison")
@@ -238,12 +242,12 @@ def fullCompare():
     playerList2 = buildUserGameList(int(player2.steamId))
     if playerList1 == 2:
       print("Player 1 is bad!")
-      response['player1'] = player1.name + ' needs to set their "Game details" to public here: ' + player1.profileURI + 'edit/settings'
+      errorResponse['player1'] = player1.name + ' needs to set their "Game details" to public here: ' + player1.profileURI + 'edit/settings'
     if playerList2 == 2:
       print("Player 2 is bad!")
-      response['player2'] = player2.name + ' needs to set their "Game details" to public here: ' + player2.profileURI + 'edit/settings'
-    if response != {}:
-      return jsonify(response), 406
+      errorResponse['player2'] = player2.name + ' needs to set their "Game details" to public here: ' + player2.profileURI + 'edit/settings'
+    if errorResponse != {}:
+      return jsonify(errorResponse), 406
     zipped = zipLists(playerList1, playerList2)
     coop = []
     multi = []
@@ -273,7 +277,7 @@ def fullCompare():
 
 @app.route('/steamcompare/quick', methods=['POST'])
 def quickCompare():
-  response = {}
+  errorResponse = {}
   player1 = Player()
   player2 = Player()
   print("We are starting a full comparison")
@@ -307,25 +311,27 @@ def quickCompare():
     playerList2 = buildQuickGameList(int(player2.steamId))
     if playerList1 == 2:
       print("Player 1 is bad!")
-      response['player1'] = player1.name + ' needs to set their "Game details" to public here: ' + player1.profileURI + 'edit/settings'
+      errorResponse['player1'] = player1.name + ' needs to set their "Game details" to public here: ' + player1.profileURI + 'edit/settings'
     if playerList2 == 2:
       print("Player 2 is bad!")
-      response['player2'] = player2.name + ' needs to set their "Game details" to public here: ' + player2.profileURI + 'edit/settings'
-    if response != {}:
-      return jsonify(response), 406
+      errorResponse['player2'] = player2.name + ' needs to set their "Game details" to public here: ' + player2.profileURI + 'edit/settings'
+    if errorResponse != {}:
+      return jsonify(errorResponse), 406
     zipped = zipLists(playerList1['response']['games'], playerList2['response']['games'])
-    gameNames = {}
+    master = {}
     games = []
     for game in zipped:
       tempGame = {}
       tempGame['name'] = game['name']
       tempGame['appid'] = game['appid']
       games.append(tempGame)
-    gameNames['games'] = games
-    return jsonify(gameNames)
+    master['players'] = playersToDict(playerData)
+    master['games'] = games
+    return jsonify(master)
 
 
 '''
+Super old, console-only output.
 playerList1 = buildUserGameList(player1)
 playerList2 = buildUserGameList(player2)
 
