@@ -85,8 +85,12 @@ def zipLists(a, b):
 def buildQuickGameList(id):
   userListRaw = requests.get(steamOwnedGamesBaseURI + '/IPlayerService/GetOwnedGames/v1/?key=' +
                             webKey + '&steamId=' + str(id) + '&include_appinfo=1&include_played_free_games=&format=json')
-  print(userListRaw.url)
   userList = json.loads(userListRaw.text)
+  if userListJSON['response'] == {}:
+    brokenBoi = getPlayerData(id)
+    print(brokenBoi[0].name + " needs to update their profile settings here: https://steamcommunity.com/profiles/" + str(brokenBoi[0].steamId) + "/edit/settings")
+    print("They need to set their 'Game Details' to 'Public'")
+    return 2
   return userList
 
 def buildUserGameList(id, debug=False):
@@ -98,7 +102,6 @@ def buildUserGameList(id, debug=False):
   #f.write(userListRaw.text)
   userListJSON = json.loads(userListRaw.text)
   if userListJSON['response'] == {}:
-    print (id)
     brokenBoi = getPlayerData(id)
     print(brokenBoi[0].name + " needs to update their profile settings here: https://steamcommunity.com/profiles/" + str(brokenBoi[0].steamId) + "/edit/settings")
     print("They need to set their 'Game Details' to 'Public'")
@@ -302,6 +305,14 @@ def quickCompare():
     playerList1 = buildQuickGameList(int(player1.steamId))
     print("2: Building quick game list for "  + str(player2.name))
     playerList2 = buildQuickGameList(int(player2.steamId))
+    if playerList1 == 2:
+      print("Player 1 is bad!")
+      response['player1'] = player1.name + ' needs to set their "Game details" to public here: ' + player1.profileURI + 'edit/settings'
+    if playerList2 == 2:
+      print("Player 2 is bad!")
+      response['player2'] = player2.name + ' needs to set their "Game details" to public here: ' + player2.profileURI + 'edit/settings'
+    if response != {}:
+      return jsonify(response), 406
     zipped = zipLists(playerList1['response']['games'], playerList2['response']['games'])
     gameNames = {}
     games = []
