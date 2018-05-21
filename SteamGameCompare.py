@@ -82,6 +82,12 @@ def zipLists(a, b):
           pass
   return zipped
 
+def buildQuickGameList(id):
+  userListRaw = requests.get(steamOwnedGamesBaseURI + '/IPlayerService/GetOwnedGames/v1/?key=' +
+                            webKey + '&steamId=' + str(id) + '&include_appinfo=1&include_played_free_games=&format=json')
+  print(userListRaw.url)
+  userList = json.loads(userListRaw.text)
+  return userList
 
 def buildUserGameList(id, debug=False):
   gameList = []
@@ -92,6 +98,7 @@ def buildUserGameList(id, debug=False):
   #f.write(userListRaw.text)
   userListJSON = json.loads(userListRaw.text)
   if userListJSON['response'] == {}:
+    print (id)
     brokenBoi = getPlayerData(id)
     print(brokenBoi[0].name + " needs to update their profile settings here: https://steamcommunity.com/profiles/" + str(brokenBoi[0].steamId) + "/edit/settings")
     print("They need to set their 'Game Details' to 'Public'")
@@ -195,34 +202,43 @@ def bad_request(error):
 @app.route('/steamcompare/full', methods=['POST'])
 def fullCompare():
   response = {}
-  player1 = None
-  player2 = None
+  player1 = Player()
+  player2 = Player()
   print("We are starting a full comparison")
   if request.data:
     players = request.get_json(force=True)
-    if int(players["player1"]) > int(players["player2"]):
-      print ("We're swapping")
-      player1 = players['player2']
-      player2 = players['player1']
-    elif int(players["player1"]) < int(players["player2"]):
-      print ("no swaps needed")
-      player1 = players["player1"]
-      player2 = players["player2"]
-    elif players["player1"] == players["player2"]:
+    if players["player1"] == players["player2"]:
       return "you put in the same player twice", 400
     if len(players) != 2:
       abort(400)
-    playerList1 = buildUserGameList(int(player1))
-    playerList2 = buildUserGameList(int(player2))
-    playerData = getPlayerData(player1, player2)
-
-    print("Player 1 is: " + playerData[0].name)
-    print("Player 2 is: " + playerData[1].name)
+    player1.steamId = players['player1']
+    player2.steamId = players['player2']
+    playerData = getPlayerData(player1.steamId, player2.steamId)
+    if int(playerData[0].steamId) == int(player1.steamId):
+      player1.name = playerData[0].name
+      player1.avatarURI = playerData[0].avatarURI
+      print (player1.avatarURI)
+      player1.profileURI = playerData[0].profileURI
+      player2.name = playerData[1].name
+      player2.avatarURI = playerData[1].avatarURI
+      player2.profileURI = playerData[1].profileURI
+    if int(playerData[0].steamId) == int(player2.steamId):
+      player1.name = playerData[1].name
+      player1.avatarURI = playerData[1].avatarURI
+      player1.profileURI = playerData[1].profileURI
+      player2.name = playerData[0].name
+      player2.avatarURI = playerData[0].avatarURI
+      player2.profileURI = playerData[0].profileURI
+    print("1: Building the game list for "  + str(player1.name))
+    playerList1 = buildUserGameList(int(player1.steamId))
+    print("2: Building the game list for "  + str(player2.name))
+    playerList2 = buildUserGameList(int(player2.steamId))
     if playerList1 == 2:
       print("Player 1 is bad!")
-      response['player1'] = playerData[0].name + ' needs to set their "Game details" to public here: ' + playerData[0].profileURI + '/edit/settings'
+      response['player1'] = player1.name + ' needs to set their "Game details" to public here: ' + player1.profileURI + 'edit/settings'
     if playerList2 == 2:
-      response['player2'] = playerData[1].name + ' needs to set their "Game details" to public here: ' + playerData[1].profileURI + '/edit/settings'
+      print("Player 2 is bad!")
+      response['player2'] = player2.name + ' needs to set their "Game details" to public here: ' + player2.profileURI + 'edit/settings'
     if response != {}:
       return jsonify(response), 406
     zipped = zipLists(playerList1, playerList2)
@@ -246,9 +262,58 @@ def fullCompare():
     master['coop'] = coop
     master['multi'] = multi
     master['useless'] = useless
+    #print(bcolors.BOLD + bcolors.FAIL + 'Info for Games Shared Between ' + players[0].name + ' & ' + players[1].name + bcolors.ENDC)
+    printSharedGames(master['coop'], master['multi'], master['useless'])
     return jsonify(master)
   else:
     abort(401)
+
+@app.route('/steamcompare/quick', methods=['POST'])
+def quickCompare():
+  response = {}
+  player1 = Player()
+  player2 = Player()
+  print("We are starting a full comparison")
+  if request.data:
+    players = request.get_json(force=True)
+    if players["player1"] == players["player2"]:
+      return "you put in the same player twice", 400
+    if len(players) != 2:
+      abort(400)
+    player1.steamId = players['player1']
+    player2.steamId = players['player2']
+    playerData = getPlayerData(player1.steamId, player2.steamId)
+    if int(playerData[0].steamId) == int(player1.steamId):
+      player1.name = playerData[0].name
+      player1.avatarURI = playerData[0].avatarURI
+      print (player1.avatarURI)
+      player1.profileURI = playerData[0].profileURI
+      player2.name = playerData[1].name
+      player2.avatarURI = playerData[1].avatarURI
+      player2.profileURI = playerData[1].profileURI
+    if int(playerData[0].steamId) == int(player2.steamId):
+      player1.name = playerData[1].name
+      player1.avatarURI = playerData[1].avatarURI
+      player1.profileURI = playerData[1].profileURI
+      player2.name = playerData[0].name
+      player2.avatarURI = playerData[0].avatarURI
+      player2.profileURI = playerData[0].profileURI
+    print("1: Building quick game list for "  + str(player1.name))
+    playerList1 = buildQuickGameList(int(player1.steamId))
+    print("2: Building quick game list for "  + str(player2.name))
+    playerList2 = buildQuickGameList(int(player2.steamId))
+    zipped = zipLists(playerList1['response']['games'], playerList2['response']['games'])
+    gameNames = {}
+    games = []
+    for game in zipped:
+      tempGame = {}
+      tempGame['name'] = game['name']
+      tempGame['appid'] = game['appid']
+      games.append(tempGame)
+    gameNames['games'] = games
+    return jsonify(gameNames)
+
+
 '''
 playerList1 = buildUserGameList(player1)
 playerList2 = buildUserGameList(player2)
