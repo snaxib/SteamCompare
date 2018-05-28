@@ -38,11 +38,28 @@ class bcolors:
     UNDERLINE = '\033[4m'
 
 
+APP_ERROR_TYPE = [
+  {
+  "error":"rate_limited",
+  "code":0,
+  "message":"Over 200 detail requests in the last 5 minutes. Wait 5 or more minutes before making any new requests"
+  },
+  {
+  "error":"game_does_not_exist",
+  "code":1,
+  "message":"The game you were requesting information on does not exist.Either the ID is incorrect or it was replaced by another app on Steam."
+  },
+  {
+  "error":"redirect",
+  "code":2,
+  "message":"The game redirects to another title."
+  }
+]
 
 # basic uri and auth stuff
 steamOwnedGamesBaseURI = 'https://api.steampowered.com/'
 steamGameInfoBaseURI = 'http://store.steampowered.com/api/'
-steamPlayerInfoBaseURI = 'http://api.steampowered.com'
+steamPlayerInfoBaseURI = 'http://api.steampowered.com/'
 
 #A filler DB entry for games that have no categories
 nullCategory = {"id":0,"description":"This Game has No Categories"}
@@ -81,6 +98,21 @@ def zipLists(a, b):
           pass
   return zipped
 
+def lookupSingle(gameID):
+  if Game.objects(appid=gameID):
+    return gameToDict(Game.objects(appid=gameID))
+  else:
+    r = requests.get(steamGameInfoBaseURI + 'appdetails?appids=' + gameID)
+    gameJSON = json.loads(r.text)
+    if r.text == 'null':
+      return 0
+    if gameJSON[gameID]["success"] == False:
+      return 1
+    if gameID != gameJSON[gameID]['data']['steam_appid']:
+      return 2
+
+
+
 def buildQuickGameList(id):
   userListRaw = requests.get(steamOwnedGamesBaseURI + '/IPlayerService/GetOwnedGames/v1/?key=' +
                             webKey + '&steamId=' + str(id) + '&include_appinfo=1&include_played_free_games=&format=json')
@@ -92,7 +124,7 @@ def buildQuickGameList(id):
     return 2
   return userListJSON
 
-#This is the "Full Compare."" Basically it gets the user's owned games, then checks the local DB for it, and grabs details of it doesn't exist in the DB
+#This is the "Full Compare." Basically it gets the user's owned games, then checks the local DB for it, and grabs details of it doesn't exist in the DB
 def buildUserGameList(id, debug=False):
   gameList = []
   userListRaw = requests.get(steamOwnedGamesBaseURI + '/IPlayerService/GetOwnedGames/v1/?key=' +
@@ -172,7 +204,7 @@ def printSharedGames(coop, multi, useless):
 def getPlayerData(player1, player2=None):
   players = []
   if player2 == None:
-    r = requests.get(steamPlayerInfoBaseURI + '/ISteamUser/GetPlayerSummaries/v0002/?key=' + webKey + '&steamids=' + str(player1))
+    r = requests.get(steamPlayerInfoBaseURI + 'ISteamUser/GetPlayerSummaries/v0002/?key=' + webKey + '&steamids=' + str(player1))
     userDataRaw = json.loads(r.text)
     user = userDataRaw['response']['players'][0]
     player = Player()
@@ -183,7 +215,7 @@ def getPlayerData(player1, player2=None):
     players.append(player)
     return players
   elif player2 != None:
-    r = requests.get(steamPlayerInfoBaseURI + '/ISteamUser/GetPlayerSummaries/v0002/?key=' + webKey + '&steamids=' + str(player1) + ',' + str(player2))
+    r = requests.get(steamPlayerInfoBaseURI + 'ISteamUser/GetPlayerSummaries/v0002/?key=' + webKey + '&steamids=' + str(player1) + ',' + str(player2))
     userDataRaw = json.loads(r.text)
     for user in userDataRaw['response']['players']:
       player = Player()
@@ -327,8 +359,19 @@ def quickCompare():
       games.append(tempGame)
     master['players'] = playersToDict(playerData)
     master['games'] = games
-    return jsonify(master)
+    return jsonify(master), 200
 
+@app.route('/steamcompare/single', methods=['POST'])
+def single():
+  errorResponse = {}
+  if request.data:
+    game = request.get_json(force=True)
+    gameResult = lookupSingle(game['appid'])
+    if type(gameResult) is int:
+      errorResponse = APP_ERROR_TYPE[gameResult]
+      return jsonify(errorResponse), 400
+    else:
+      return jsonify(gameResult), 200
 
 '''
 Super old, console-only output.
