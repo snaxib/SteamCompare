@@ -27,6 +27,7 @@ class Player:
   profileURI = None
   steamId = None
 
+#This is for console output and will be eventually removed
 class bcolors:
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
@@ -37,8 +38,8 @@ class bcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
-
-APP_ERROR_TYPE = [
+#Maybe can be moved to a local file later, but for now it's here
+STEAM_APP_ERROR_TYPE = [
   {
   "error":"rate_limited",
   "code":0,
@@ -47,7 +48,7 @@ APP_ERROR_TYPE = [
   {
   "error":"game_does_not_exist",
   "code":1,
-  "message":"The game you were requesting information on does not exist.Either the ID is incorrect or it was replaced by another app on Steam."
+  "message":"The game you were requesting information on does not exist. Either the ID is incorrect or it was replaced by another app on Steam."
   },
   {
   "error":"redirect",
@@ -102,15 +103,14 @@ def lookupSingle(gameID):
   if Game.objects(appid=gameID):
     return gameToDict(Game.objects(appid=gameID))
   else:
-    r = requests.get(steamGameInfoBaseURI + 'appdetails?appids=' + gameID)
+    r = requests.get(steamGameInfoBaseURI + 'appdetails?appids=' + str(gameID))
     gameJSON = json.loads(r.text)
     if r.text == 'null':
       return 0
-    if gameJSON[gameID]["success"] == False:
+    if gameJSON[str(gameID)]["success"] == False:
       return 1
     if gameID != gameJSON[gameID]['data']['steam_appid']:
       return 2
-
 
 
 def buildQuickGameList(id):
@@ -148,35 +148,37 @@ def buildUserGameList(id, debug=False):
       print(f"{gameCursor/totalGames*100:.1f} %", end="\r")
       gameCursor += 1
       userAppId = str(game['appid'])
-      #Search the mongoDB for the game's appID
-      if Game.objects(appid=userAppId):
-        gameList.append(gameToDict(Game.objects(appid=userAppId)))
-      #Go grab the game details since we don't have it locally
-      else:
-          r = requests.get(steamGameInfoBaseURI + 'appdetails?appids=' + userAppId)
-          gameInfo = json.loads(r.text)
-          if r.text == 'null':
-            pass
-            #print("Game is Null, skipping (" + userAppId + " " + game['name'] + ")")
-          elif gameInfo[userAppId]["success"]== False:
-            pass
-            #print("Game is broken, skipping (" + userAppId + " " + game['name'] + ")")
-          else:
-            if Game.objects(appid=gameInfo[userAppId]['data']['steam_appid']):
-              #print("Multiple Games redirect to this same AppID: " + str(gameInfo[userAppId]['data']['steam_appid']))
-              gameList.append(gameToDict(Game.objects(appid=userAppId)))
-            else:
-              #print("Adding " + gameInfo[userAppId]["data"]['name'] + " to DB (" + userAppId + ")")
-              if "categories" in gameInfo[userAppId]["data"]:
-                newGame = Game(name=gameInfo[userAppId]["data"]['name'],appid=gameInfo[userAppId]["data"]["steam_appid"],
-                               categories=gameInfo[userAppId]["data"]["categories"]).save()
+      gameDetails = lookupSingle(game['appid'])
+      if gameDetails == 0:
+        #This is the Rate-limited case
+        #Maybe there should be some logic here for waiting.
+        pass
+      elif gameDetails == 1:
+        #This is the success=false case
+        pass
+      elif gameDetails == 2:
+        #This is the case where Multiple games return the game details for the same game
+        #This happens with Expansion packs that are no longer for individual sale often.
+        #Examples include F.E.A.R. Purseus Mandate/Extraction Point (appid's: 21110/21120)
+        if Game.objects(appid=gameDetails[userAppId]['data']['steam_appid'])
+          #The game whose details were returned we have info for
+          if not Game.objects(appid=game['appid'])
+            #We do not have an ID with the game we searched for
+            if "categories" in gameDetails[userAppId]["data"]:
+                newGame = Game(name=game['name'],appid=game['appid'],
+                               categories=gameDetails[userAppId]["data"]["categories"]).save()
                 #print("Added " + gameInfo[userAppId]["data"]['name'] + " to DB")
                 gameList.append(gameToDict(Game.objects(appid=userAppId)))
-                time.sleep(2)
-              else:
-                newGame = Game(name=gameInfo[userAppId]["data"]['name'],appid=gameInfo[userAppId]["data"]["steam_appid"],
+            else:
+                newGame = Game(name=game['name'],appid=game["appid"],
                                categories=[nullCategory]).save()
                 gameList.append(gameToDict(Game.objects(appid=userAppId)))
+          elif Game.objects(appid=userAppId):
+            gameList.append(gameToDict(Game.objects(appid=userAppId)))
+          else:
+            pass
+      elif isinstance(gameDetails,dict):
+          gameList.append(gameDetails)
   return gameList
 
 def determineProperList(game):
@@ -190,6 +192,7 @@ def determineProperList(game):
         gameRate += 2
   return gameRate
 
+#This is for console output and will, likely, be removed eventually
 def printSharedGames(coop, multi, useless):
   print(bcolors.BOLD + bcolors.OKGREEN + "Here's the Coop games you share:" + bcolors.ENDC)
   for game in coop:
@@ -312,7 +315,6 @@ def quickCompare():
   errorResponse = {}
   player1 = Player()
   player2 = Player()
-  print("We are starting a full comparison")
   if request.data:
     players = request.get_json(force=True)
     if players["player1"] == players["player2"]:
@@ -368,7 +370,7 @@ def single():
     game = request.get_json(force=True)
     gameResult = lookupSingle(game['appid'])
     if type(gameResult) is int:
-      errorResponse = APP_ERROR_TYPE[gameResult]
+      errorResponse = STEAM_APP_ERROR_TYPE[gameResult]
       return jsonify(errorResponse), 400
     else:
       return jsonify(gameResult), 200
