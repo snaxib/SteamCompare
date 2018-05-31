@@ -169,31 +169,17 @@ def printSharedGames(coop, multi, useless):
   for game in useless:
     print("\t" + game['name'])
 
-def getPlayerData(player1, player2=None):
-  players = []
-  if player2 == None:
-    r = requests.get(steamPlayerInfoBaseURI + '/ISteamUser/GetPlayerSummaries/v0002/?key=' + webKey + '&steamids=' + str(player1))
-    userDataRaw = json.loads(r.text)
-    user = userDataRaw['response']['players'][0]
-    player = Player()
-    player.name = user['personaname']
-    player.steamId = user['steamid']
-    player.profileURI =user['profileurl']
-    player.avatarURI = user['avatarfull']
-    players.append(player)
-    return players
-  elif player2 != None:
-    r = requests.get(steamPlayerInfoBaseURI + '/ISteamUser/GetPlayerSummaries/v0002/?key=' + webKey + '&steamids=' + str(player1) + ',' + str(player2))
-    userDataRaw = json.loads(r.text)
-    for user in userDataRaw['response']['players']:
-      player = Player()
-      player.name = user['personaname']
-      player.steamId = user['steamid']
-      player.profileURI =user['profileurl']
-      player.avatarURI = user['avatarfull']
-      players.append(player)
-    return players
-
+def getPlayerData(player):
+  r = requests.get(steamPlayerInfoBaseURI + '/ISteamUser/GetPlayerSummaries/v0002/?key=' + webKey + '&steamids=' + str(player))
+  userDataRaw = json.loads(r.text)
+  user = userDataRaw['response']['players'][0]
+  player = Player()
+  player.name = user['personaname']
+  player.steamId = user['steamid']
+  player.profileURI = user['profileurl']
+  player.avatarURI = user['avatarfull']
+  return player
+  
 @app.errorhandler(404)
 def page_not_found(error):
     return 'This page does not exist', 404
@@ -209,8 +195,6 @@ def bad_request(error):
 @app.route('/steamcompare/full', methods=['POST'])
 def fullCompare():
   errorResponse = {}
-  player1 = Player()
-  player2 = Player()
   print("We are starting a full comparison")
   if request.data:
     players = request.get_json(force=True)
@@ -218,24 +202,11 @@ def fullCompare():
       return "you put in the same player twice", 400
     if len(players) != 2:
       abort(400)
-    player1.steamId = players['player1']
-    player2.steamId = players['player2']
-    playerData = getPlayerData(player1.steamId, player2.steamId)
-    if int(playerData[0].steamId) == int(player1.steamId):
-      player1.name = playerData[0].name
-      player1.avatarURI = playerData[0].avatarURI
-      print (player1.avatarURI)
-      player1.profileURI = playerData[0].profileURI
-      player2.name = playerData[1].name
-      player2.avatarURI = playerData[1].avatarURI
-      player2.profileURI = playerData[1].profileURI
-    if int(playerData[0].steamId) == int(player2.steamId):
-      player1.name = playerData[1].name
-      player1.avatarURI = playerData[1].avatarURI
-      player1.profileURI = playerData[1].profileURI
-      player2.name = playerData[0].name
-      player2.avatarURI = playerData[0].avatarURI
-      player2.profileURI = playerData[0].profileURI
+    player1steamId = players['player1']
+    player2steamId = players['player2']
+    player1 = getPlayerData(player1steamID)
+    player2 = getPlayerData(player2steamID)
+    print (player1.avatarURI)
     print("1: Building the game list for "  + str(player1.name))
     playerList1 = buildUserGameList(int(player1.steamId))
     print("2: Building the game list for "  + str(player2.name))
@@ -264,6 +235,7 @@ def fullCompare():
         useless.append(game)
       else:
         print("the value of list was " + str(list) + "...")
+    playerData = [player1, player2]
     master['players'] = playersToDict(playerData)
     print(playersToDict(playerData))
     master['coop'] = coop
@@ -278,33 +250,18 @@ def fullCompare():
 @app.route('/steamcompare/quick', methods=['POST'])
 def quickCompare():
   errorResponse = {}
-  player1 = Player()
-  player2 = Player()
-  print("We are starting a full comparison")
+  print("We are starting a quick comparison")
   if request.data:
     players = request.get_json(force=True)
     if players["player1"] == players["player2"]:
       return "you put in the same player twice", 400
     if len(players) != 2:
       abort(400)
-    player1.steamId = players['player1']
-    player2.steamId = players['player2']
-    playerData = getPlayerData(player1.steamId, player2.steamId)
-    if int(playerData[0].steamId) == int(player1.steamId):
-      player1.name = playerData[0].name
-      player1.avatarURI = playerData[0].avatarURI
-      print (player1.avatarURI)
-      player1.profileURI = playerData[0].profileURI
-      player2.name = playerData[1].name
-      player2.avatarURI = playerData[1].avatarURI
-      player2.profileURI = playerData[1].profileURI
-    if int(playerData[0].steamId) == int(player2.steamId):
-      player1.name = playerData[1].name
-      player1.avatarURI = playerData[1].avatarURI
-      player1.profileURI = playerData[1].profileURI
-      player2.name = playerData[0].name
-      player2.avatarURI = playerData[0].avatarURI
-      player2.profileURI = playerData[0].profileURI
+    player1steamId = players['player1']
+    player2steamId = players['player2']
+    player1 = getPlayerData(player1steamId)
+    player2 = getPlayerData(player2steamId)
+    print (player1.avatarURI)
     print("1: Building quick game list for "  + str(player1.name))
     playerList1 = buildQuickGameList(int(player1.steamId))
     print("2: Building quick game list for "  + str(player2.name))
@@ -325,6 +282,7 @@ def quickCompare():
       tempGame['name'] = game['name']
       tempGame['appid'] = game['appid']
       games.append(tempGame)
+    playerData = [player1, player2]
     master['players'] = playersToDict(playerData)
     master['games'] = games
     return jsonify(master)
