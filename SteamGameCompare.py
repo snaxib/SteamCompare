@@ -27,6 +27,7 @@ class Player:
   profileURI = None
   steamId = None
 
+#This is for console output and will be eventually removed
 class bcolors:
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
@@ -37,12 +38,29 @@ class bcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
-
+#Maybe can be moved to a local file later, but for now it's here
+STEAM_APP_ERROR_TYPE = [
+  {
+  "error":"rate_limited",
+  "code":0,
+  "message":"Over 200 detail requests in the last 5 minutes. Wait 5 or more minutes before making any new requests"
+  },
+  {
+  "error":"game_does_not_exist",
+  "code":1,
+  "message":"The game you were requesting information on does not exist. Either the ID is incorrect or it was replaced by another app on Steam."
+  },
+  {
+  "error":"redirect",
+  "code":2,
+  "message":"The game redirects to another title."
+  }
+]
 
 # basic uri and auth stuff
 steamOwnedGamesBaseURI = 'https://api.steampowered.com/'
 steamGameInfoBaseURI = 'http://store.steampowered.com/api/'
-steamPlayerInfoBaseURI = 'http://api.steampowered.com'
+steamPlayerInfoBaseURI = 'http://api.steampowered.com/'
 
 #A filler DB entry for games that have no categories
 nullCategory = {"id":0,"description":"This Game has No Categories"}
@@ -81,6 +99,20 @@ def zipLists(a, b):
           pass
   return zipped
 
+def lookupSingle(gameID):
+  if Game.objects(appid=gameID):
+    return gameToDict(Game.objects(appid=gameID))
+  else:
+    r = requests.get(steamGameInfoBaseURI + 'appdetails?appids=' + str(gameID))
+    gameJSON = json.loads(r.text)
+    if r.text == 'null':
+      return 0
+    if gameJSON[str(gameID)]["success"] == False:
+      return 1
+    if gameID != gameJSON[gameID]['data']['steam_appid']:
+      return 2
+
+
 def buildQuickGameList(id):
   userListRaw = requests.get(steamOwnedGamesBaseURI + '/IPlayerService/GetOwnedGames/v1/?key=' +
                             webKey + '&steamId=' + str(id) + '&include_appinfo=1&include_played_free_games=&format=json')
@@ -92,7 +124,7 @@ def buildQuickGameList(id):
     return 2
   return userListJSON
 
-#This is the "Full Compare."" Basically it gets the user's owned games, then checks the local DB for it, and grabs details of it doesn't exist in the DB
+#This is the "Full Compare." Basically it gets the user's owned games, then checks the local DB for it, and grabs details of it doesn't exist in the DB
 def buildUserGameList(id, debug=False):
   gameList = []
   userListRaw = requests.get(steamOwnedGamesBaseURI + '/IPlayerService/GetOwnedGames/v1/?key=' +
@@ -116,35 +148,37 @@ def buildUserGameList(id, debug=False):
       print(f"{gameCursor/totalGames*100:.1f} %", end="\r")
       gameCursor += 1
       userAppId = str(game['appid'])
-      #Search the mongoDB for the game's appID
-      if Game.objects(appid=userAppId):
-        gameList.append(gameToDict(Game.objects(appid=userAppId)))
-      #Go grab the game details since we don't have it locally
-      else:
-          r = requests.get(steamGameInfoBaseURI + 'appdetails?appids=' + userAppId)
-          gameInfo = json.loads(r.text)
-          if r.text == 'null':
-            pass
-            #print("Game is Null, skipping (" + userAppId + " " + game['name'] + ")")
-          elif gameInfo[userAppId]["success"]== False:
-            pass
-            #print("Game is broken, skipping (" + userAppId + " " + game['name'] + ")")
-          else:
-            if Game.objects(appid=gameInfo[userAppId]['data']['steam_appid']):
-              #print("Multiple Games redirect to this same AppID: " + str(gameInfo[userAppId]['data']['steam_appid']))
-              gameList.append(gameToDict(Game.objects(appid=userAppId)))
-            else:
-              #print("Adding " + gameInfo[userAppId]["data"]['name'] + " to DB (" + userAppId + ")")
-              if "categories" in gameInfo[userAppId]["data"]:
-                newGame = Game(name=gameInfo[userAppId]["data"]['name'],appid=gameInfo[userAppId]["data"]["steam_appid"],
-                               categories=gameInfo[userAppId]["data"]["categories"]).save()
+      gameDetails = lookupSingle(game['appid'])
+      if gameDetails == 0:
+        #This is the Rate-limited case
+        #Maybe there should be some logic here for waiting.
+        pass
+      elif gameDetails == 1:
+        #This is the success=false case
+        pass
+      elif gameDetails == 2:
+        #This is the case where Multiple games return the game details for the same game
+        #This happens with Expansion packs that are no longer for individual sale often.
+        #Examples include F.E.A.R. Purseus Mandate/Extraction Point (appid's: 21110/21120)
+        if Game.objects(appid=gameDetails[userAppId]['data']['steam_appid'])
+          #The game whose details were returned we have info for
+          if not Game.objects(appid=game['appid'])
+            #We do not have an ID with the game we searched for
+            if "categories" in gameDetails[userAppId]["data"]:
+                newGame = Game(name=game['name'],appid=game['appid'],
+                               categories=gameDetails[userAppId]["data"]["categories"]).save()
                 #print("Added " + gameInfo[userAppId]["data"]['name'] + " to DB")
                 gameList.append(gameToDict(Game.objects(appid=userAppId)))
-                time.sleep(2)
-              else:
-                newGame = Game(name=gameInfo[userAppId]["data"]['name'],appid=gameInfo[userAppId]["data"]["steam_appid"],
+            else:
+                newGame = Game(name=game['name'],appid=game["appid"],
                                categories=[nullCategory]).save()
                 gameList.append(gameToDict(Game.objects(appid=userAppId)))
+          elif Game.objects(appid=userAppId):
+            gameList.append(gameToDict(Game.objects(appid=userAppId)))
+          else:
+            pass
+      elif isinstance(gameDetails,dict):
+          gameList.append(gameDetails)
   return gameList
 
 def determineProperList(game):
@@ -158,6 +192,7 @@ def determineProperList(game):
         gameRate += 2
   return gameRate
 
+#This is for console output and will, likely, be removed eventually
 def printSharedGames(coop, multi, useless):
   print(bcolors.BOLD + bcolors.OKGREEN + "Here's the Coop games you share:" + bcolors.ENDC)
   for game in coop:
@@ -172,7 +207,7 @@ def printSharedGames(coop, multi, useless):
 def getPlayerData(player1, player2=None):
   players = []
   if player2 == None:
-    r = requests.get(steamPlayerInfoBaseURI + '/ISteamUser/GetPlayerSummaries/v0002/?key=' + webKey + '&steamids=' + str(player1))
+    r = requests.get(steamPlayerInfoBaseURI + 'ISteamUser/GetPlayerSummaries/v0002/?key=' + webKey + '&steamids=' + str(player1))
     userDataRaw = json.loads(r.text)
     user = userDataRaw['response']['players'][0]
     player = Player()
@@ -183,7 +218,7 @@ def getPlayerData(player1, player2=None):
     players.append(player)
     return players
   elif player2 != None:
-    r = requests.get(steamPlayerInfoBaseURI + '/ISteamUser/GetPlayerSummaries/v0002/?key=' + webKey + '&steamids=' + str(player1) + ',' + str(player2))
+    r = requests.get(steamPlayerInfoBaseURI + 'ISteamUser/GetPlayerSummaries/v0002/?key=' + webKey + '&steamids=' + str(player1) + ',' + str(player2))
     userDataRaw = json.loads(r.text)
     for user in userDataRaw['response']['players']:
       player = Player()
@@ -280,7 +315,6 @@ def quickCompare():
   errorResponse = {}
   player1 = Player()
   player2 = Player()
-  print("We are starting a full comparison")
   if request.data:
     players = request.get_json(force=True)
     if players["player1"] == players["player2"]:
@@ -327,8 +361,19 @@ def quickCompare():
       games.append(tempGame)
     master['players'] = playersToDict(playerData)
     master['games'] = games
-    return jsonify(master)
+    return jsonify(master), 200
 
+@app.route('/steamcompare/single', methods=['POST'])
+def single():
+  errorResponse = {}
+  if request.data:
+    game = request.get_json(force=True)
+    gameResult = lookupSingle(game['appid'])
+    if type(gameResult) is int:
+      errorResponse = STEAM_APP_ERROR_TYPE[gameResult]
+      return jsonify(errorResponse), 400
+    else:
+      return jsonify(gameResult), 200
 
 '''
 Super old, console-only output.
