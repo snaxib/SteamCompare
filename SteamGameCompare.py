@@ -160,9 +160,9 @@ def buildUserGameList(id, debug=False):
         #This is the case where Multiple games return the game details for the same game
         #This happens with Expansion packs that are no longer for individual sale often.
         #Examples include F.E.A.R. Purseus Mandate/Extraction Point (appid's: 21110/21120)
-        if Game.objects(appid=gameDetails[userAppId]['data']['steam_appid'])
+        if Game.objects(appid=gameDetails[userAppId]['data']['steam_appid']):
           #The game whose details were returned we have info for
-          if not Game.objects(appid=game['appid'])
+          if not Game.objects(appid=game['appid']):
             #We do not have an ID with the game we searched for
             if "categories" in gameDetails[userAppId]["data"]:
                 newGame = Game(name=game['name'],appid=game['appid'],
@@ -239,8 +239,8 @@ def fullCompare():
       abort(400)
     player1steamId = players['player1']
     player2steamId = players['player2']
-    player1 = getPlayerData(player1steamID)
-    player2 = getPlayerData(player2steamID)
+    player1 = getPlayerData(player1steamId)
+    player2 = getPlayerData(player2steamId)
     print (player1.avatarURI)
     print("1: Building the game list for "  + str(player1.name))
     playerList1 = buildUserGameList(int(player1.steamId))
@@ -285,12 +285,7 @@ def fullCompare():
 @app.route('/steamcompare/quick', methods=['POST'])
 def quickCompare():
   errorResponse = {}
-<<<<<<< HEAD
-  player1 = Player()
-  player2 = Player()
-=======
   print("We are starting a quick comparison")
->>>>>>> master
   if request.data:
     players = request.get_json(force=True)
     if players["player1"] == players["player2"]:
