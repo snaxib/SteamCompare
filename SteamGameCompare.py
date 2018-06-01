@@ -204,33 +204,6 @@ def printSharedGames(coop, multi, useless):
   for game in useless:
     print("\t" + game['name'])
 
-<<<<<<< HEAD
-def getPlayerData(player1, player2=None):
-  players = []
-  if player2 == None:
-    r = requests.get(steamPlayerInfoBaseURI + 'ISteamUser/GetPlayerSummaries/v0002/?key=' + webKey + '&steamids=' + str(player1))
-    userDataRaw = json.loads(r.text)
-    user = userDataRaw['response']['players'][0]
-    player = Player()
-    player.name = user['personaname']
-    player.steamId = user['steamid']
-    player.profileURI =user['profileurl']
-    player.avatarURI = user['avatarfull']
-    players.append(player)
-    return players
-  elif player2 != None:
-    r = requests.get(steamPlayerInfoBaseURI + 'ISteamUser/GetPlayerSummaries/v0002/?key=' + webKey + '&steamids=' + str(player1) + ',' + str(player2))
-    userDataRaw = json.loads(r.text)
-    for user in userDataRaw['response']['players']:
-      player = Player()
-      player.name = user['personaname']
-      player.steamId = user['steamid']
-      player.profileURI =user['profileurl']
-      player.avatarURI = user['avatarfull']
-      players.append(player)
-    return players
-
-=======
 def getPlayerData(player):
   r = requests.get(steamPlayerInfoBaseURI + '/ISteamUser/GetPlayerSummaries/v0002/?key=' + webKey + '&steamids=' + str(player))
   userDataRaw = json.loads(r.text)
@@ -241,8 +214,7 @@ def getPlayerData(player):
   player.profileURI = user['profileurl']
   player.avatarURI = user['avatarfull']
   return player
-  
->>>>>>> master
+
 @app.errorhandler(404)
 def page_not_found(error):
     return 'This page does not exist', 404
