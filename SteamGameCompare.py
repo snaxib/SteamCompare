@@ -279,6 +279,7 @@ def getPlayerData(player):
     player.avatarURI = user['avatarfull']
     return player
 
+# APPLICATION ROUTE
 
 @app.errorhandler(404)
 def page_not_found(error):
@@ -294,13 +295,9 @@ def bad_request(error):
 def bad_request(error):
     return ('You did not provide a json payload', 401)
 
-
+# Check for two players, check for complete dataset, return game list or throw.
 @app.route('/steamcompare/full', methods=['POST'])
 def fullCompare():
-    '''
-  Check for two players, check for complete dataset, return game list or throw.
-  '''
-
     errorResponse = {}
     print ('We are starting a full comparison')
     if request.data:
@@ -362,13 +359,9 @@ def fullCompare():
     else:
         abort(401)
 
-
+# Same as /steamcompare/full but doesn't care about local databae or app details
 @app.route('/steamcompare/quick', methods=['POST'])
 def quickCompare():
-    """
-  Same as /steamcompare/full but doesn't care about local databae or app details
-"""
-
     errorResponse = {}
     print('We are starting a quick comparison')
     if request.data:
@@ -435,5 +428,3 @@ def lookupUser():
     errorResponse = {}
     if request.data:
         pass
-
-
