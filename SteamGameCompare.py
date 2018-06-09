@@ -118,6 +118,10 @@ def lookupSingle(gameID):
 
 
 def buildQuickGameList(id):
+    """
+    returns dict of gamelist, if access denied throw
+    """
+
   userListRaw = requests.get(steamOwnedGamesBaseURI + '/IPlayerService/GetOwnedGames/v1/?key=' +
                             webKey + '&steamId=' + str(id) + '&include_appinfo=1&include_played_free_games=&format=json')
   userListJSON = json.loads(userListRaw.text)
