@@ -406,9 +406,8 @@ def quickCompare():
     else:
         abort(401)
 
-
+# Takes app id, if error throw, if local database
 @app.route('/steamcompare/single', methods=['POST'])
-#Takes app id, if error throw, if local database
 def single():
     errorResponse = {}
     if request.data:
