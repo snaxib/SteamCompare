@@ -236,6 +236,9 @@ def bad_request(error):
     return 'You did not provide a json payload', 401
 
 @app.route('/steamcompare/full', methods=['POST'])
+"""
+Check for two players, check for complete dataset, return game list or throw.
+"""
 def fullCompare():
   errorResponse = {}
   print("We are starting a full comparison")
@@ -267,7 +270,7 @@ def fullCompare():
     multi = []
     useless = []
     master = {}
-    for game in zipped:
+      for game in zipped:
       list = determineProperList(game)
       #print(game['name'] + " has a score of " + str(list))
       if list == 1 or list == 3:
