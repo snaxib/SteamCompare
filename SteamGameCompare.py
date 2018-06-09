@@ -295,7 +295,7 @@ def fullCompare():
 
 @app.route('/steamcompare/quick', methods=['POST'])
 """
-Same as /steamcompare/full but doesn't care about local databae or app details
+Same as /steamcompare/full but doesn't care about local database or app details; returns players and games.
 """
 def quickCompare():
   errorResponse = {}
@@ -339,6 +339,7 @@ def quickCompare():
     abort(401)
 
 @app.route('/steamcompare/single', methods=['POST'])
+#Takes app id, if error throw, if local database
 def single():
   errorResponse = {}
   if request.data:
