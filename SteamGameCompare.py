@@ -294,6 +294,9 @@ def fullCompare():
     abort(401)
 
 @app.route('/steamcompare/quick', methods=['POST'])
+"""
+Same as /steamcompare/full but doesn't care about local databae or app details
+"""
 def quickCompare():
   errorResponse = {}
   print("We are starting a quick comparison")
