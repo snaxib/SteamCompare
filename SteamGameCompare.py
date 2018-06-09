@@ -80,7 +80,7 @@ steamPlayerInfoBaseURI = 'http://api.steampowered.com/'
 nullCategory = {'id': 0, 'description': 'This Game has No Categories'}
 
 
-def gameToDict(game):
+def gameToDict(game):comment
     dict = {}
     for boop in game:
         dict['name'] = boop.name
@@ -421,7 +421,7 @@ def single():
     else:
         abort(401)
 
-
+# takes a login name or steam ID64, return player object 
 @app.route('/steamcompare/lookupuser', methods=['POST'])
 def lookupUser():
     errorResponse = {}
