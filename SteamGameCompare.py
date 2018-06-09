@@ -41,16 +41,19 @@ class bcolors:
 #Maybe can be moved to a local file later, but for now it's here
 STEAM_APP_ERROR_TYPE = [
   {
+  "type":"STEAM_APP_ERROR",
   "error":"rate_limited",
   "code":0,
   "message":"Over 200 detail requests in the last 5 minutes. Wait 5 or more minutes before making any new requests"
   },
   {
+  "type":"STEAM_APP_ERROR",
   "error":"game_does_not_exist",
   "code":1,
   "message":"The game you were requesting information on does not exist. Either the ID is incorrect or it was replaced by another app on Steam."
   },
   {
+  "type":"STEAM_APP_ERROR",
   "error":"redirect",
   "code":2,
   "message":"The game redirects to another title."
@@ -109,7 +112,8 @@ def lookupSingle(gameID):
       return 0
     if gameJSON[str(gameID)]["success"] == False:
       return 1
-    if gameID != gameJSON[gameID]['data']['steam_appid']:
+    if gameID != gameJSON[str(gameID)]['data']['steam_appid']:
+      print (gameJSON)
       return 2
 
 
@@ -321,6 +325,8 @@ def quickCompare():
     master['players'] = playersToDict(playerData)
     master['games'] = games
     return jsonify(master), 200
+  else:
+    abort(401)
 
 @app.route('/steamcompare/single', methods=['POST'])
 def single():
@@ -333,11 +339,18 @@ def single():
       return jsonify(errorResponse), 400
     else:
       return jsonify(gameResult), 200
+  else:
+    abort(401)
 
+@app.route('/steamcompare/lookupuser', methods=['POST'])
+def lookupUser():
+  errorResponse = {}
+  if request.data:
+    pass
 '''
 Super old, console-only output.
 playerList1 = buildUserGameList(player1)
-playerList2 = buildUserGameList(player2)
+playdarth merList2 = buildUserGameList(player2)
 
 
 players = getPlayerData(player1, player2)
