@@ -1,27 +1,20 @@
 import requests
 import json
 import time
-from mongoengine import *
+from pymongo import MongoClient
 import datetime
 from flask import Flask
 from flask import abort, redirect, url_for, request, jsonify
 
-connect()
+client = MongoClient()
+db = client.gameData
+game = db.game
+
 settings = json.load(open('settings.json'))
 
 webKey = settings['webKey']
 
 app = Flask(__name__)
-
-
-# Schema for adding games to the DB
-
-class Game(Document):
-
-    name = StringField(required=True)
-    appid = DecimalField(required=True)
-    categories = ListField(required=True)
-    date_modified = DateTimeField(default=datetime.datetime.utcnow)
 
 
 # Schema for player Object, maybe will add to DB eventually
@@ -102,22 +95,20 @@ def playersToDict(players):
 
 
 def zipLists(a, b):
-    zipped = []
-    for game in a:
-        if game == {}:
-            pass
-        else:
-            for game2 in b:
-                if game == game2:
-                    zipped.append(game)
-                else:
-                    pass
-    return zipped
+    result = []
+    fullList = a.copy()
+    fullList.extend(b)
+    for game in fullList:
+        if game in a:
+            if game in b:
+                result.append(game)
+    return result
 
 
 def lookupSingle(gameID):
-    if Game.objects(appid=gameID):
-        return gameToDict(Game.objects(appid=gameID))
+    gameData = game.find_one({'appid':gameID},{'_id': False})
+    if gameData is not None:
+        return gameData
     else:
         r = requests.get(steamGameInfoBaseURI + 'appdetails?appids='
                          + str(gameID))
@@ -204,32 +195,27 @@ def buildUserGameList(id, debug=False):
         # This happens with Expansion packs that are no longer for individual sale often.
         # Examples include F.E.A.R. Purseus Mandate/Extraction Point (appid's: 21110/21120)
 
-                if Game.objects(appid=gameDetails[userAppId]['data'
-                                ]['steam_appid']):
+                if game.find_one({'appid':gameDetails[userAppId]['data']['steam_appid'] }):
 
           # The game whose details were returned we have info for
 
-                    if not Game.objects(appid=game['appid']):
+                    if not game.find_one({"appid":game['appid']}):
 
             # We do not have an ID with the game we searched for
 
-                        if 'categories' in gameDetails[userAppId]['data'
-                                ]:
-                            newGame = Game(name=game['name'],
-                                    appid=game['appid'],
-                                    categories=gameDetails[userAppId]['data'
-                                    ]['categories']).save()
-
-                # print("Added " + gameInfo[userAppId]["data"]['name'] + " to DB")
-
-                            gameList.append(gameToDict(Game.objects(appid=userAppId)))
+                        if 'categories' in gameDetails[userAppId]['data']:
+                            game.insert_one({'name':game['name'],
+                                    'appid':game['appid'],
+                                    'categories':gameDetails[userAppId]['data'
+                                    ]['categories']})
+                            gameList.append(game.find_one({'appid':userAppId},{'_id': False}))
                         else:
-                            newGame = Game(name=game['name'],
-                                    appid=game['appid'],
-                                    categories=[nullCategory]).save()
-                            gameList.append(gameToDict(Game.objects(appid=userAppId)))
-                    elif Game.objects(appid=userAppId):
-                        gameList.append(gameToDict(Game.objects(appid=userAppId)))
+                            game.insert_one({'name':game['name'],
+                                    'appid':game['appid'],
+                                    'categories':[nullCategory]})
+                            gameList.append(game.find_one({'appid':userAppId},{'_id': False}))
+                    elif game.find_one({'appid':game['appid']}):
+                        gameList.append(game.find_one({'appid':userAppId},{'_id': False}))
                     else:
                         pass
             elif isinstance(gameDetails, dict):
@@ -240,7 +226,9 @@ def buildUserGameList(id, debug=False):
 def determineProperList(game):
     gameRate = 0
     for category in game['categories']:
-        if category['id'] == 38 or category['id'] == 9:
+        if isinstance(category, list):
+            pass
+        elif category['id'] == 38 or category['id'] == 9:
             if gameRate == 0 or gameRate == 2:
                 gameRate += 1
         elif category['id'] == 1 or category['id'] == 36:
@@ -346,7 +334,6 @@ def fullCompare():
                 print ('the value of list was ' + str(list) + '...')
         playerData = [player1, player2]
         master['players'] = playersToDict(playerData)
-        print (playersToDict(playerData))
         master['coop'] = coop
         master['multi'] = multi
         master['useless'] = useless
@@ -402,7 +389,7 @@ def quickCompare():
         playerData = [player1, player2]
         master['players'] = playersToDict(playerData)
         master['games'] = games
-        return (jsonify(master), 200)
+        return jsonify(master), 200
     else:
         abort(401)
 
@@ -417,7 +404,7 @@ def single():
             errorResponse = STEAM_APP_ERROR_TYPE[gameResult]
             return (jsonify(errorResponse), 400)
         else:
-            return (jsonify(gameResult), 200)
+            return jsonify(gameResult), 200
     else:
         abort(401)
 

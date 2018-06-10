@@ -6,4 +6,7 @@ This is a tool to compare two users' steam games with two modes:
 1. Full Compare
   * This grabs detailed information about each game and splits the results into three lists: Coop, Multiplayer, and Useless based on the Categories on the games
 
-pip 3 install requests mongoengine flask
+Dependencies:
+* Requests
+* PyMongo
+* Flask
