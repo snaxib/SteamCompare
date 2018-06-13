@@ -67,6 +67,7 @@ STEAM_APP_ERROR_TYPE = [{
 steamOwnedGamesBaseURI = 'https://api.steampowered.com/'
 steamGameInfoBaseURI = 'http://store.steampowered.com/api/'
 steamPlayerInfoBaseURI = 'http://api.steampowered.com/'
+steamMediaBaseURI = 'http://media.steampowered.com/steamcommunity/public/images/apps/'
 
 # A filler DB entry for games that have no categories
 
@@ -98,10 +99,10 @@ def zipLists(a, b):
     result = []
     fullList = a.copy()
     fullList.extend(b)
-    for game in fullList:
-        if game in a:
-            if game in b:
-                result.append(game)
+    for g in fullList:
+        if g in a:
+            if g in b:
+                result.append(g)
     return result
 
 
@@ -114,11 +115,14 @@ def lookupSingle(gameID):
                          + str(gameID))
         gameJSON = json.loads(r.text)
         if r.text == 'null':
-            return 0
-        if gameJSON[str(gameID)]['success'] == False:
-            return 1
-        if gameID != gameJSON[str(gameID)]['data']['steam_appid']:
-            return 2
+            return 0, gameJSON
+        elif gameJSON[str(gameID)]['success'] == False:
+            return 1, gameJSON
+        elif gameID != gameJSON[str(gameID)]['data']['steam_appid']:
+            return 2, gameJSON
+        else:
+            return 3, gameJSON
+
 
 
 def buildQuickGameList(id):
@@ -146,10 +150,9 @@ def buildQuickGameList(id):
 def buildUserGameList(id, debug=False):
     gameList = []
     userListRaw = requests.get(steamOwnedGamesBaseURI
-                               + '/IPlayerService/GetOwnedGames/v1/?key='
-                                + webKey + '&steamId=' + str(id)
-                               + '&include_appinfo=1&include_played_free_games=&format=json'
-                               )
+                                + '/IPlayerService/GetOwnedGames/v1/?key=' \
+                                + webKey + '&steamId=' + str(id) \
+                                + '&include_appinfo=1&include_played_free_games=1&format=json')
 
   # Use this to tell which game(s) break on a steam library (SHould no longer be needed, but keeping it just in case)
   # f = open("debug.txt", 'w')
@@ -170,26 +173,36 @@ def buildUserGameList(id, debug=False):
         userGames = userListJSON['response']['games']
         totalGames = len(userGames)
         gameCursor = 0
-        for game in userGames:
+        for g in userGames:
 
       # This is/was for console output - Mostly because as of writing this, there's no frontend and sending people JSON is not as...parseable
-      # print(f"{gameCursor/totalGames*100:.1f} %", end="\r")
-
+            print(f"{gameCursor/totalGames*100:.1f} %", end="\r")
             gameCursor += 1
-            userAppId = str(game['appid'])
-            gameDetails = lookupSingle(game['appid'])
-            if gameDetails == 0:
+            userAppId = str(g['appid'])
+            gameStatus = lookupSingle(g['appid'])
+            if isinstance(gameStatus, dict):
+                gameStatus['thumbnail'] = steamMediaBaseURI + userAppId + '/' + g['img_logo_url'] + '.jpg'
+                gameStatus['steam_url'] = 'http://store.steampowered.com/app/' + userAppId
+                gameList.append(gameStatus)
+            elif gameStatus[0] == 0:
 
         # This is the Rate-limited case
         # Maybe there should be some logic here for waiting.
 
                 pass
-            elif gameDetails == 1:
+            elif gameStatus[0] == 1:
 
         # This is the success=false case
-
-                pass
-            elif gameDetails == 2:
+                game.insert_one({'name':g['name'],
+                                'appid':g['appid'],
+                                'categories':[nullCategory],
+                                'unavailable':True})
+                newGame = game.find_one({'appid':int(userAppId)},{'_id': False})
+                newGame['thumbnail'] = steamMediaBaseURI + userAppId + '/' + g['img_logo_url'] + '.jpg'
+                newGame['steam_url'] = 'http://store.steampowered.com/app/' + userAppId
+                gameList.append(newGame)
+            elif gameStatus[0] == 2:
+                gameDetails = gameStatus[1]
 
         # This is the case where Multiple games return the game details for the same game
         # This happens with Expansion packs that are no longer for individual sale often.
@@ -199,27 +212,49 @@ def buildUserGameList(id, debug=False):
 
           # The game whose details were returned we have info for
 
-                    if not game.find_one({"appid":game['appid']}):
+                    if not game.find_one({"appid":g['appid']}):
 
             # We do not have an ID with the game we searched for
 
                         if 'categories' in gameDetails[userAppId]['data']:
-                            game.insert_one({'name':game['name'],
-                                    'appid':game['appid'],
-                                    'categories':gameDetails[userAppId]['data'
-                                    ]['categories']})
-                            gameList.append(game.find_one({'appid':userAppId},{'_id': False}))
+                            game.insert_one({'name':g['name'],
+                                            'appid':g['appid'],
+                                            'categories':gameDetails[userAppId]['data']['categories'],
+                                            'platforms':gameDetails[userAppId]['data']['platforms'],
+                                            'is_free':gameDetails[userAppId]['data']['is_free']})
+                            newGame = game.find_one({'appid':int(userAppId)},{'_id': False})
+                            newGame['thumbnail'] = steamMediaBaseURI + userAppId + '/' + g['img_logo_url'] + '.jpg'
+                            newGame['steam_url'] = 'http://store.steampowered.com/app/' + userAppId
+                            gameList.append(newGame)
                         else:
-                            game.insert_one({'name':game['name'],
-                                    'appid':game['appid'],
-                                    'categories':[nullCategory]})
-                            gameList.append(game.find_one({'appid':userAppId},{'_id': False}))
-                    elif game.find_one({'appid':game['appid']}):
-                        gameList.append(game.find_one({'appid':userAppId},{'_id': False}))
+                            game.insert_one({'name':g['name'],
+                                            'appid':g['appid'],
+                                            'categories':[nullCategory],
+                                            'platforms':gameDetails[userAppId]['data']['platforms'],
+                                            'is_free':gameDetails[userAppId]['data']['is_free']})
+                            newGame = game.find_one({'appid':int(userAppId)},{'_id': False})
+                            newGame['thumbnail'] = steamMediaBaseURI + userAppId + '/' + g['img_logo_url'] + '.jpg'
+                            newGame['steam_url'] = 'http://store.steampowered.com/app/' + userAppId
+                            gameList.append(newGame)
+                    elif game.find_one({'appid':g['appid']}):
+                        newGame = game.find_one({'appid':int(userAppId)},{'_id': False})
+                        newGame['thumbnail'] = steamMediaBaseURI + userAppId + '/' + g['img_logo_url'] + '.jpg'
+                        newGame['steam_url'] = 'http://store.steampowered.com/app/' + userAppId
+                        gameList.append(newGame)
                     else:
                         pass
-            elif isinstance(gameDetails, dict):
-                gameList.append(gameDetails)
+            elif gameStatus[0] == 3:
+                newGameRaw = gameStatus[1]
+                newGame = newGameRaw[userAppId]['data']
+                newGameInsert = db.game.insert_one({'appid':newGame['steam_appid'],
+                                                    'name':newGame['name'],
+                                                    'categories':newGame['categories'],
+                                                    'platforms':newGame['platforms'],
+                                                    'is_free':newGame['is_free']})
+                foundGame = game.find_one({'appid':int(userAppId)},{'_id': False})
+                foundGame['thumbnail'] = steamMediaBaseURI + userAppId + '/' + g['img_logo_url'] + '.jpg'
+                foundGame['steam_url'] = 'http://store.steampowered.com/app/' + userAppId
+                gameList.append(foundGame)
     return gameList
 
 
@@ -380,15 +415,9 @@ def quickCompare():
         zipped = zipLists(playerList1['response']['games'],
                           playerList2['response']['games'])
         master = {}
-        games = []
-        for game in zipped:
-            tempGame = {}
-            tempGame['name'] = game['name']
-            tempGame['appid'] = game['appid']
-            games.append(tempGame)
         playerData = [player1, player2]
         master['players'] = playersToDict(playerData)
-        master['games'] = games
+        master['games'] = zipped
         return jsonify(master), 200
     else:
         abort(401)
