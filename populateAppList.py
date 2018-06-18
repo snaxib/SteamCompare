@@ -1,15 +1,13 @@
-from mongoengine import *
+from pymongo import MongoClient
 import requests
 import json
 import datetime
 import time
 
 
-class Game(Document):
-  name = StringField(required=True)
-  appid = DecimalField(required=True)
-  categories = ListField(required=True)
-  date_modified = DateTimeField(default=datetime.datetime.utcnow)
+client = MongoClient()
+db = client.gameData
+game = db.game
 
 settings = json.load(open('settings.json'))
 
@@ -19,86 +17,168 @@ steamGameInfoBaseURI = 'http://store.steampowered.com/api/'
 steamPlayerInfoBaseURI = 'http://api.steampowered.com'
 nullCategory = [{"id":0,"description":"This Game has No Categories"}]
 
+def lookupSingle(gameID):
+    '''
+    Lookup one game and return the results. If the game exists in the local DB, return
+    the data, else return an integer corresponding to an action.
+    0: Rate-limited
+    1: Game does not exist
+    2: Game exists, but we don't have it in the DB
+    '''
+    gameData = game.find_one({'appid':gameID},{'_id': False})
+    if gameData is not None:
+        return gameData
+    else:
+        r = requests.get(steamGameInfoBaseURI + 'appdetails?appids='
+                         + str(gameID))
+        gameJSON = json.loads(r.text)
+        if r.text == 'null' or r.text == None:
+            return 0, gameJSON
+        elif gameJSON[str(gameID)]['success'] == False:
+            return 1, gameJSON
+        else:
+            return 2, gameJSON
 
-def gameToDict(game):
-  dict = {}
-  for boop in game:
-    dict['name'] = boop.name
-    dict['appid'] = int(boop.appid)
-    dict['categories'] = boop.categories
-  return dict
-
-connect()
 
 r = requests.get('https://api.steampowered.com/ISteamApps/GetAppList/v2/')
 gameRaw = json.loads(r.text)
-fullGameList = gameRaw['applist']['apps']
+fullAppList = gameRaw['applist']['apps']
 
-totalGames = len(fullGameList)
-iteration = 1
+localAppList = game.find({},{'_id':False})
+idListLocal = []
+idListFull = []
+outOfDateApps = []
+
+for gameData in localAppList:
+    idListLocal.append(int(gameData['appid']))
+    if 'is_free' in gameData and 'platforms' in gameData:
+        pass
+    elif 'unavailable' in gameData:
+        pass
+    else: 
+        outOfDateApps.append(gameData)
+
+for app in fullAppList:
+    idListFull.append(int(app['appid']))
+ 
+set1 = set(idListFull)
+set2 = set(idListLocal)
+newIds = set1-set2
+
+for app in fullAppList:
+    if app['appid'] in newIds:
+        outOfDateApps.append(app)
+
+
+
+totalGames = len(outOfDateApps)
+print(totalGames)
 gameCursor = 0
-#Use this to tell which game(s) break on a steam library
-#f = open("debug.txt", 'w')
-#f.write(r.text)
 
-for game in fullGameList:
-    print(f"{gameCursor/totalGames*100:.1f} %", end="\r")
+for g in outOfDateApps:
+    #print(f"{gameCursor/totalGames*100:.1f} %", end="\r")
     gameCursor += 1
-    #print('Working on '+ game['name'] + ' (' + str(iteration) + ' of ' + str(totalGames) + ' ' + str(100*(iteration/totalGames)) + '%)')
-    iteration += 1
-    userAppId = str(game['appid'])
-    if Game.objects(appid=userAppId):
-      pass
-    else:
-        r = requests.get(steamGameInfoBaseURI + 'appdetails?appids=' + userAppId)
-        gameInfo = json.loads(r.text)
-        if r.text == 'null':
-          print("Game is Null, waiting 5 minutes (" + userAppId + " " + game['name'] + ")")
-          timer = 0
-          while timer < 300:
-            timer += 1
-            time.sleep(1)
-            print(f"{gameCursor/totalGames*100:.1f} % (" + str(300-timer) + " seconds remaining)", end="\r")
-          retry = requests.get(steamGameInfoBaseURI + 'appdetails?appids=' + userAppId)
-          gameInfoRetry = json.loads(retry.text)
-          try:
-            attempt = gameInfoRetry[userAppId]
-            if gameInfoRetry[userAppId]["success"] == "false":
-              newGame = Game(name=game["name"],appid=game["appid"],
-                             categories=nullCategory).save()
-              print("Added " + game['name'] + " to DB")
-              print(f"{gameCursor/totalGames*100:.1f} %", end="\r")
-            elif gameInfoRetry[userAppId]["data"]["steam_appid"] != userAppId:
-              newGame = Game(name=game["name"],appid=game["appid"],
-                             categories=nullCategory).save()
-              print("Added " + gameInfo[userAppId]["data"]['name'] + " to DB")
-              print(f"{gameCursor/totalGames*100:.1f} %", end="\r")
-          except:
-            pass
-            print(f"{gameCursor/totalGames*100:.1f} %", end="\r")
-        elif gameInfo[userAppId]["success"]== False:
-          #print("Game is broken, skipping (" + userAppId + " " + game['name'] + ")")
-          newGame = Game(name=game["name"],appid=game["appid"],
-                             categories=nullCategory).save()
-          print("Added " + game['name'] + " to DB")
-          print(f"{gameCursor/totalGames*100:.1f} %", end="\r")
-          pass
-          time.sleep(.75)
-        else:
-          if Game.objects(appid=gameInfo[userAppId]['data']['steam_appid']):
-            #print("Multiple Games redirect to this same AppID: " + str(gameInfo[userAppId]['data']['steam_appid']))
-            newGame = Game(name=game["name"],appid=game["appid"],
-                             categories=nullCategory).save()
-            print("Added " + gameInfo[userAppId]["data"]['name'] + " to DB (Multiple Games redirect to this appid)")
-            print(f"{gameCursor/totalGames*100:.1f} %", end="\r")
-            time.sleep(.75)
-          else:
-            print("Adding " + gameInfo[userAppId]["data"]['name'] + " to DB (" + userAppId + ")")
-            if "categories" in gameInfo[userAppId]["data"]:
-              newGame = Game(name=gameInfo[userAppId]["data"]['name'],appid=gameInfo[userAppId]["data"]["steam_appid"],
-                             categories=gameInfo[userAppId]["data"]["categories"]).save()
-              print("Added " + gameInfo[userAppId]["data"]['name'] + " to DB")
-              time.sleep(.75)
+    userAppId = str(int(g['appid']))
+    gameLookup = lookupSingle(g['appid'])
+    if isinstance(gameLookup, tuple):
+        gameResult = gameLookup[0]
+        gameDetails = gameLookup[1]
+        if gameResult == 0:
+            print("Game is Null, waiting 5 minutes (" + userAppId + " " + g['name'] + ")")
+            timer = 0
+            while timer < 300:
+                timer += 1
+                time.sleep(1)
+                print(f"{gameCursor/totalGames*100:.1f} % (" + str(300-timer) + " seconds remaining)", end="\r")
+            retry = lookupSingle(userAppId)
+            gameInfoRetry = retry[1]
+            if retry[0] == 0:
+                print(g['name'] + "was not added, double nulled")
+                pass
+            elif retry[0] == 1:
+                game.insert_one({'name':g['name'],
+                                'appid':g['appid'],
+                                'categories':nullCategory,
+                                'unavailable':True})
+                print("Added " + g['name'] + " to DB - But game is unavailable to buy")
+                time.sleep(.5)
+                #print(f"{gameCursor/totalGames*100:.1f} %", end="\r")
+            elif retry[0] == 2:
+                if 'categories' in gameInfoRetry[userAppId]['data']:
+                    game.insert_one({'name':g['name'],
+                                    'appid':g['appid'],
+                                    'categories':gameInfoRetry[userAppId]['data']['categories'],
+                                    'platforms':gameInfoRetry[userAppId]['data']['platforms'],
+                                    'is_free':gameInfoRetry[userAppId]['data']['is_free']})
+                    print("Added " + g['name'] + " to DB")
+                    time.sleep(.5)
+                    #print(f"{gameCursor/totalGames*100:.1f} %", end="\r")
+                else:
+                    game.insert_one({'name':g['name'],
+                                    'appid':g['appid'],
+                                    'categories': nullCategory,
+                                    'platforms':gameInfoRetry[userAppId]['data']['platforms'],
+                                    'is_free':gameInfoRetry[userAppId]['data']['is_free']})
+                    print("Added " + g['name'] + " to DB")
+                    time.sleep(.5)
+                    #print(f"{gameCursor/totalGames*100:.1f} %", end="\r")
+        elif gameResult == 1:
+            game.insert_one({'name':g['name'],
+                            'appid':g['appid'],
+                            'categories':nullCategory,
+                            'unavailable':True})
+            print("Added " + g['name'] + " to DB - But game is unavailable to buy")
+            time.sleep(.5)
+            #print(f"{gameCursor/totalGames*100:.1f} %", end="\r")
+        elif gameResult == 2:
+            if 'categories' in gameDetails[userAppId]['data']:
+                game.insert_one({'name':g['name'],
+                                'appid':g['appid'],
+                                'categories':gameDetails[userAppId]['data']['categories'],
+                                'platforms':gameDetails[userAppId]['data']['platforms'],
+                                'is_free':gameDetails[userAppId]['data']['is_free']})
+                print("Added " + g['name'] + " to DB")
+                time.sleep(.5)
+                #print(f"{gameCursor/totalGames*100:.1f} %", end="\r")
             else:
-              newGame = Game(name=gameInfo[userAppId]["data"]['name'],appid=gameInfo[userAppId]["data"]["steam_appid"],
-                             categories=[nullCategory]).save()
+                game.insert_one({'name':g['name'],
+                                'appid':g['appid'],
+                                'categories': nullCategory,
+                                'platforms':gameDetails[userAppId]['data']['platforms'],
+                                'is_free':gameDetails[userAppId]['data']['is_free']})
+                print("Added " + g['name'] + " to DB")
+                time.sleep(.5)
+                #print(f"{gameCursor/totalGames*100:.1f} %", end="\r")
+    elif isinstance(gameLookup, dict):
+        #print(f"{gameCursor/totalGames*100:.1f} % (" + gameLookup['name'] + ")", end="\r")
+        r = requests.get(steamGameInfoBaseURI + 'appdetails?appids='
+                         + userAppId)
+        gameDetails = json.loads(r.text)
+        if gameDetails == 'null' or gameDetails == None:
+            print("Game is Null, waiting 5 minutes (" + userAppId + " " + g['name'] + ")")
+            timer = 0
+            while timer < 300:
+                timer += 1
+                time.sleep(1)
+                print(f"{gameCursor/totalGames*100:.1f} % (" + str(300-timer) + " seconds remaining)", end="\r")
+        else:
+            try:
+                if gameDetails[userAppId]['success'] == False:
+                    game.replace_one({'appid':gameLookup['appid']},
+                                    {'name':gameLookup['name'],
+                                    'appid':gameLookup['appid'],
+                                    'categories':nullCategory,
+                                    'unavailable':True})
+                    print('Updated game: '+ gameLookup['name'])
+                    time.sleep(.5)
+                else:
+                    game.replace_one({'appid':gameLookup['appid']},
+                                    {'name':gameLookup['name'],
+                                    'appid':gameLookup['appid'],
+                                    'categories':gameLookup['categories'],
+                                    'platforms':gameDetails[userAppId]['data']['platforms'],
+                                    'is_free':gameDetails[userAppId]['data']['is_free']})
+                    print('Updated game: '+ gameLookup['name'])
+                    time.sleep(.5)
+            except TypeError:
+                print (gameDetails)
