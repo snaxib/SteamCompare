@@ -97,12 +97,18 @@ def playersToDict(players):
 
 def zipLists(a, b):
     result = []
-    fullList = a.copy()
-    fullList.extend(b)
+    fullList = []
+    for item in a:
+        fullList.append(item)
+    for item in b:
+        fullList.append(item)
     for g in fullList:
         if g in a:
             if g in b:
-                result.append(g)
+                if g not in result:
+                    result.append(g)
+    for game in result:
+        print(game['name'])
     return result
 
 
@@ -274,19 +280,23 @@ def determineProperList(game):
 
 # This is for console output and will, likely, be removed eventually
 
-def printSharedGames(coop, multi, useless):
+def printSharedGames(gameList):
+    games = gameList['games']
     print (bcolors.BOLD + bcolors.OKGREEN \
             + "Here's the Coop games you share:" + bcolors.ENDC)
-    for game in coop:
-        print('\t' + game['name'])
+    for game in games:
+        if "coop" in game['multi']:
+            print('\t' + game['name'])
     print (bcolors.BOLD + bcolors.OKGREEN \
             + "Here's the Multiplayer games you share:" + bcolors.ENDC)
-    for game in multi:
-        print('\t' + game['name'])
+    for game in games:
+        if "multiplayer" in game['multi']:
+            print('\t' + game['name'])
     print (bcolors.BOLD + bcolors.OKGREEN \
         + "Here's the Useless games you share:" + bcolors.ENDC)
-    for game in useless:
-        print('\t' + game['name'])
+    for game in games:
+        if "singleplayer" in game['multi']:
+            print('\t' + game['name'])
 
 
 def getPlayerData(player):
@@ -350,33 +360,35 @@ def fullCompare():
         if errorResponse != {}:
             return (jsonify(errorResponse), 406)
         zipped = zipLists(playerList1, playerList2)
-        coop = []
-        multi = []
-        useless = []
         master = {}
+        games = []
         for game in zipped:
+            game['multi'] = []
             list = determineProperList(game)
-
-      # print(game['name'] + " has a score of " + str(list))
-
-            if list == 1 or list == 3:
-                coop.append(game)
-            elif list == 2 or list == 3:
-                multi.append(game)
+            if list == 1:
+                game['multi'].append("coop")
+                games.append(game)
+            elif list == 2:
+                game['multi'].append("multiplayer")
+                games.append(game)
+            elif list == 3:
+                if "multi" not in game['multi']:
+                    game['multi'].append("multiplayer")
+                if "coop" not in game['multi']:
+                    game['multi'].append("coop")
+                games.append(game)
             elif list == 0:
-                useless.append(game)
+                game['multi'].append("singleplayer")
+                games.append(game)
             else:
                 print ('the value of list was ' + str(list) + '...')
         playerData = [player1, player2]
         master['players'] = playersToDict(playerData)
-        master['coop'] = coop
-        master['multi'] = multi
-        master['useless'] = useless
+        master['games'] = games
 
     # print(bcolors.BOLD + bcolors.FAIL + 'Info for Games Shared Between ' + players[0].name + ' & ' + players[1].name + bcolors.ENDC)
 
-        printSharedGames(master['coop'], master['multi'],
-                         master['useless'])
+        printSharedGames(master)
         return jsonify(master)
     else:
         abort(401)

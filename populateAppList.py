@@ -18,6 +18,13 @@ steamPlayerInfoBaseURI = 'http://api.steampowered.com'
 nullCategory = [{"id":0,"description":"This Game has No Categories"}]
 
 def lookupSingle(gameID):
+    '''
+    Lookup one game and return the results. If the game exists in the local DB, return
+    the data, else return an integer corresponding to an action.
+    0: Rate-limited
+    1: Game does not exist
+    2: Game exists, but we don't have it in the DB
+    '''
     gameData = game.find_one({'appid':gameID},{'_id': False})
     if gameData is not None:
         return gameData
@@ -25,7 +32,7 @@ def lookupSingle(gameID):
         r = requests.get(steamGameInfoBaseURI + 'appdetails?appids='
                          + str(gameID))
         gameJSON = json.loads(r.text)
-        if r.text == 'null':
+        if r.text == 'null' or r.text == None:
             return 0, gameJSON
         elif gameJSON[str(gameID)]['success'] == False:
             return 1, gameJSON
@@ -38,15 +45,29 @@ gameRaw = json.loads(r.text)
 fullAppList = gameRaw['applist']['apps']
 
 localAppList = game.find({},{'_id':False})
+idListLocal = []
+idListFull = []
 outOfDateApps = []
 
 for gameData in localAppList:
-    if 'is_free' in gameData and 'platforms' in gameData: 
+    idListLocal.append(int(gameData['appid']))
+    if 'is_free' in gameData and 'platforms' in gameData:
         pass
     elif 'unavailable' in gameData:
         pass
     else: 
         outOfDateApps.append(gameData)
+
+for app in fullAppList:
+    idListFull.append(int(app['appid']))
+ 
+set1 = set(idListFull)
+set2 = set(idListLocal)
+newIds = set1-set2
+
+for app in fullAppList:
+    if app['appid'] in newIds:
+        outOfDateApps.append(app)
 
 
 
@@ -133,7 +154,7 @@ for g in outOfDateApps:
         r = requests.get(steamGameInfoBaseURI + 'appdetails?appids='
                          + userAppId)
         gameDetails = json.loads(r.text)
-        if gameDetails == 'null':
+        if gameDetails == 'null' or gameDetails == None:
             print("Game is Null, waiting 5 minutes (" + userAppId + " " + g['name'] + ")")
             timer = 0
             while timer < 300:
@@ -161,4 +182,3 @@ for g in outOfDateApps:
                     time.sleep(.5)
             except TypeError:
                 print (gameDetails)
-
