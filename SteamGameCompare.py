@@ -3,6 +3,7 @@ import json
 import time
 from pymongo import MongoClient
 import datetime
+import xml.etree.ElementTree as ET
 from flask import Flask
 from flask import abort, redirect, url_for, request, jsonify
 
@@ -42,19 +43,30 @@ class bcolors:
 
 
 # Maybe can be moved to a local file later, but for now it's here
+STEAM_ID_ERROR_TYPE = [{
+    'type':'STEAM_ID_LOOKUP_ERROR',
+    'error':'user_not_found',
+    'code':0,
+    'message':'The user you were trying to lookup was not found.'
+},{
+    'type':'STEAM_ID_LOOKUP_ERROR',
+    'eror':'unknown_error',
+    'code':1,
+    'message':'An unknown erorr occured when looking up the users steam id.'
+}
 
+]
 STEAM_APP_ERROR_TYPE = [{
     'type': 'STEAM_APP_ERROR',
     'error': 'rate_limited',
     'code': 0,
-    'message': 'Over 200 detail requests in the last 5 minutes. Wait 5 or more minutes before making any new requests'
+    'message': 'Over 200 detail requests in the last 5 minutes. Wait 5 or more minutes before making any new requests.'
         ,
     }, {
     'type': 'STEAM_APP_ERROR',
     'error': 'game_does_not_exist',
     'code': 1,
-    'message': 'The game you were requesting information on does not exist. Either the ID is incorrect or it was replaced by another app on Steam.'
-        ,
+    'message': 'The game you were requesting information on does not exist. Either the ID is incorrect or it was replaced by another app on Steam.',
     }, {
     'type': 'STEAM_APP_ERROR',
     'error': 'redirect',
@@ -67,6 +79,7 @@ STEAM_APP_ERROR_TYPE = [{
 steamOwnedGamesBaseURI = 'https://api.steampowered.com/'
 steamGameInfoBaseURI = 'http://store.steampowered.com/api/'
 steamPlayerInfoBaseURI = 'http://api.steampowered.com/'
+steamPlayerIDBaseURI = 'https://steamcommunity.com/id/'
 steamMediaBaseURI = 'http://media.steampowered.com/steamcommunity/public/images/apps/'
 
 # A filler DB entry for games that have no categories
@@ -107,8 +120,6 @@ def zipLists(a, b):
             if g in b:
                 if g not in result:
                     result.append(g)
-    for game in result:
-        print(game['name'])
     return result
 
 
@@ -130,15 +141,28 @@ def lookupSingle(gameID):
             return 3, gameJSON
 
 
+def getUserSteamID(steamName):
+    playerXMLRaw = requests.get(steamPlayerIDBaseURI + steamName + '/?xml=1')
+    playerXMLRoot = ET.fromstring(playerXMLRaw.text)
+    if playerXMLRoot.tag == 'response':
+        return 0
+    elif playerXMLRoot.tag == 'profile':
+        steamID64 = playerXMLRoot.find('steamID64')
+        return steamID64.text
+    else:
+        return 1
+
 
 def buildQuickGameList(id):
     '''
-    returns dict of gamelist, if access denied throw
+    returns dict of gamelist, if access denied throw.
+    This does not do any filtering based on categories or anything
+    Literally just returns the getOwnedGames
     '''
     userListRaw = requests.get(steamOwnedGamesBaseURI
                                + '/IPlayerService/GetOwnedGames/v1/?key='
                                 + webKey + '&steamId=' + str(id)
-                               + '&include_appinfo=1&include_played_free_games=&format=json'
+                               + '&include_appinfo=1&include_played_free_games=1&format=json'
                                )
     userListJSON = json.loads(userListRaw.text)
     if userListJSON['response'] == {}:
@@ -387,7 +411,6 @@ def fullCompare():
         master['games'] = games
 
     # print(bcolors.BOLD + bcolors.FAIL + 'Info for Games Shared Between ' + players[0].name + ' & ' + players[1].name + bcolors.ENDC)
-
         printSharedGames(master)
         return jsonify(master)
     else:
@@ -449,9 +472,19 @@ def single():
     else:
         abort(401)
 
-
-@app.route('/steamcompare/lookupuser', methods=['POST'])
-def lookupUser():
+# Lookup a user's STEAMID64
+@app.route('/steamcompare/steamidlookup', methods=['POST'])
+def userLookup():
     errorResponse = {}
     if request.data:
-        pass
+        if request.data:
+            playerData = request.get_json(force=True)
+            players = playerData['players']
+            master = {}
+            for player in players:
+                playerID = getUserSteamID(player)
+                if type(playerID) is int:
+                    master[player] = STEAM_ID_ERROR_TYPE[playerID]
+                else:
+                    master[player] = playerID
+            return jsonify(master)
