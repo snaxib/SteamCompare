@@ -167,9 +167,9 @@ def buildQuickGameList(id):
     userListJSON = json.loads(userListRaw.text)
     if userListJSON['response'] == {}:
         brokenBoi = getPlayerData(id)
-        print (brokenBoi[0].name \
+        print (brokenBoi.name \
                     + ' needs to update their profile settings here: https://steamcommunity.com/profiles/' \
-                    + str(brokenBoi[0].steamId) + '/edit/settings')
+                    + str(brokenBoi.steamId) + '/edit/settings')
         print ("They need to set their 'Game Details' to 'Public'")
         return 2
     return userListJSON
@@ -194,7 +194,6 @@ def buildUserGameList(id, debug=False):
 
     if userListJSON['response'] == {}:
         brokenBoi = getPlayerData(id)
-        print (brokenBoi)
         print (brokenBoi.name \
             + ' needs to update their profile settings here: https://steamcommunity.com/profiles/' \
             + str(brokenBoi.steamId) + '/edit/settings')
@@ -330,7 +329,6 @@ def getPlayerData(player):
                      + webKey + '&steamids=' + str(player))
     userDataRaw = json.loads(r.text)
     user = userDataRaw['response']['players'][0]
-    print (user)
     player = Player()
     player.name = user['personaname']
     player.steamId = user['steamid']
@@ -384,7 +382,7 @@ def fullCompare():
                 + ' needs to set their "Game details" to public here: ' \
                 + player2.profileURI + 'edit/settings'
         if errorResponse != {}:
-            return (jsonify(errorResponse), 406)
+            return (jsonify(errorResponse), 403)
         zipped = zipLists(playerList1, playerList2)
         master = {}
         games = []
@@ -448,7 +446,7 @@ def quickCompare():
                 + ' needs to set their "Game details" to public here: ' \
                 + player2.profileURI + 'edit/settings'
         if errorResponse != {}:
-            return (jsonify(errorResponse), 406)
+            return (jsonify(errorResponse), 403)
         zipped = zipLists(playerList1['response']['games'],
                           playerList2['response']['games'])
         master = {}
