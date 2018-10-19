@@ -194,9 +194,10 @@ def buildUserGameList(id, debug=False):
 
     if userListJSON['response'] == {}:
         brokenBoi = getPlayerData(id)
-        print (brokenBoi[0].name \
+        print (brokenBoi)
+        print (brokenBoi.name \
             + ' needs to update their profile settings here: https://steamcommunity.com/profiles/' \
-            + str(brokenBoi[0].steamId) + '/edit/settings')
+            + str(brokenBoi.steamId) + '/edit/settings')
         print("They need to set their 'Game Details' to 'Public'")
         return 2
     else:
@@ -329,6 +330,7 @@ def getPlayerData(player):
                      + webKey + '&steamids=' + str(player))
     userDataRaw = json.loads(r.text)
     user = userDataRaw['response']['players'][0]
+    print (user)
     player = Player()
     player.name = user['personaname']
     player.steamId = user['steamid']
