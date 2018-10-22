@@ -87,39 +87,49 @@ steamMediaBaseURI = 'http://media.steampowered.com/steamcommunity/public/images/
 nullCategory = {'id': 0, 'description': 'This Game has No Categories'}
 
 
-def gameToDict(game):
-    dict = {}
-    for boop in game:
-        dict['name'] = boop.name
-        dict['appid'] = int(boop.appid)
-        dict['categories'] = boop.categories
-    return dict
-
-
 def playersToDict(players):
-    playerList = []
-    for player in players:
+    if type(players) is list:
+        playerList = []
+        for player in players:
+            dict = {}
+            dict['name'] = player.name
+            dict['avatarURI'] = player.avatarURI
+            dict['profileURI'] = player.profileURI
+            dict['steamid'] = player.steamId
+            playerList.append(dict)
+        return playerList
+    elif type(players) is Player:
         dict = {}
-        dict['name'] = player.name
-        dict['avatarURI'] = player.avatarURI
-        dict['profileURI'] = player.profileURI
-        dict['steamid'] = player.steamId
-        playerList.append(dict)
-    return playerList
+        dict['name'] = players.name
+        dict['avatarURI'] = players.avatarURI
+        dict['profileURI'] = players.profileURI
+        dict['steamid'] = players.steamId
+        return dict
 
 
-def zipLists(a, b):
+def zipLists(userlists):
+    rawids = []
+    seenIDs = []
+    dupeids = []
     result = []
-    fullList = []
-    for item in a:
-        fullList.append(item)
-    for item in b:
-        fullList.append(item)
-    for g in fullList:
-        if g in a:
-            if g in b:
-                if g not in result:
-                    result.append(g)
+    for gamelist in userlists:
+        for game in gamelist['games']:
+            rawids.append(game['appid'])
+    dupeids = [x for n, x in enumerate(rawids) if x in rawids[:n]]
+    for gamelist in userlists:
+        for game in gamelist['games']:
+            if game['appid'] in dupeids:
+                if game['appid'] not in seenIDs:
+                    seenIDs.append(game['appid'])
+                    game['users'] = []
+                    game['users'].append(gamelist['player'])
+                    result.append(game)
+                elif game['appid'] in seenIDs:
+                    for title in result:
+                        if game['appid'] == title['appid']:
+                            title['users'].append(gamelist['player'])
+            if game['appid'] not in dupeids:
+                pass
     return result
 
 
@@ -179,6 +189,7 @@ def buildQuickGameList(id):
 
 def buildUserGameList(id, debug=False):
     gameList = []
+    gameData = {}
     userListRaw = requests.get(steamOwnedGamesBaseURI
                                 + '/IPlayerService/GetOwnedGames/v1/?key=' \
                                 + webKey + '&steamId=' + str(id) \
@@ -285,7 +296,8 @@ def buildUserGameList(id, debug=False):
                 foundGame['thumbnail'] = steamMediaBaseURI + userAppId + '/' + g['img_logo_url'] + '.jpg'
                 foundGame['steam_url'] = 'http://store.steampowered.com/app/' + userAppId
                 gameList.append(foundGame)
-    return gameList
+    gameData['games'] = gameList
+    return gameData
 
 
 def determineProperList(game):
@@ -356,35 +368,27 @@ def bad_request(error):
 @app.route('/steamcompare/full', methods=['POST'])
 def fullCompare():
     errorResponse = {}
+    gameLists=[]
+    master = {}
+    master['players'] = []
     print ('We are starting a full comparison')
     if request.data:
-        players = request.get_json(force=True)
-        if players['player1'] == players['player2']:
-            return ('you put in the same player twice', 400)
-        if len(players) != 2:
-            abort(400)
-        player1steamId = players['player1']
-        player2steamId = players['player2']
-        player1 = getPlayerData(player1steamId)
-        player2 = getPlayerData(player2steamId)
-        print ('1: Building the game list for ' + str(player1.name))
-        playerList1 = buildUserGameList(int(player1.steamId))
-        print ('2: Building the game list for ' + str(player2.name))
-        playerList2 = buildUserGameList(int(player2.steamId))
-        if playerList1 == 2:
-            print('Player 1 is bad!')
-            errorResponse['player1'] = player1.name \
-                + ' needs to set their "Game details" to public here: ' \
-                + player1.profileURI + 'edit/settings'
-        if playerList2 == 2:
-            print('Player 2 is bad!')
-            errorResponse['player2'] = player2.name \
-                + ' needs to set their "Game details" to public here: ' \
-                + player2.profileURI + 'edit/settings'
+        playerData = request.get_json(force=True)
+        for playerId in playerData['players']:
+            Player = getPlayerData(playerId)
+            print ('Building the game list for ' + str(Player.name))
+            playerList= buildUserGameList(int(Player.steamId))
+            if playerList == 2:
+                print(Player.name + ' is bad!')
+                errorResponse[Player.steamId] = Player.name \
+                    + ' needs to set their "Game details" to public here: ' \
+                    + Player.profileURI + 'edit/settings'
+            playerList['player'] = playersToDict(Player)
+            gameLists.append(playerList)
+            master['players'].append(playerList['player'])
         if errorResponse != {}:
             return (jsonify(errorResponse), 403)
-        zipped = zipLists(playerList1, playerList2)
-        master = {}
+        zipped = zipLists(gameLists)
         games = []
         for game in zipped:
             game['multi'] = []
@@ -406,12 +410,10 @@ def fullCompare():
                 games.append(game)
             else:
                 print ('the value of list was ' + str(list) + '...')
-        playerData = [player1, player2]
-        master['players'] = playersToDict(playerData)
         master['games'] = games
 
     # print(bcolors.BOLD + bcolors.FAIL + 'Info for Games Shared Between ' + players[0].name + ' & ' + players[1].name + bcolors.ENDC)
-        printSharedGames(master)
+       printSharedGames(master)
         return jsonify(master)
     else:
         abort(401)
@@ -450,8 +452,10 @@ def quickCompare():
         zipped = zipLists(playerList1['response']['games'],
                           playerList2['response']['games'])
         master = {}
-        playerData = [player1, player2]
-        master['players'] = playersToDict(playerData)
+        master['players'] = []
+        for playerId in playerData['players']:
+            print (playerid)
+            master['players'].append(playersToDict(getPlayerData(playerId)))
         master['games'] = zipped
         return jsonify(master), 200
     else:
