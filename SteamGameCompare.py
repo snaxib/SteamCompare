@@ -413,7 +413,7 @@ def fullCompare():
         master['games'] = games
 
     # print(bcolors.BOLD + bcolors.FAIL + 'Info for Games Shared Between ' + players[0].name + ' & ' + players[1].name + bcolors.ENDC)
-       # printSharedGames(master)
+       printSharedGames(master)
         return jsonify(master)
     else:
         abort(401)
