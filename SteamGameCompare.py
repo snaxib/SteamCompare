@@ -379,15 +379,25 @@ def fullCompare():
             print ('Building the game list for ' + str(Player.name))
             playerList= buildUserGameList(int(Player.steamId))
             if playerList == 2:
-                print(Player.name + ' is bad!')
-                errorResponse[Player.steamId] = Player.name \
-                    + ' needs to set their "Game details" to public here: ' \
-                    + Player.profileURI + 'edit/settings'
-            playerList['player'] = playersToDict(Player)
-            gameLists.append(playerList)
-            master['players'].append(playerList['player'])
-        if errorResponse != {}:
-            return (jsonify(errorResponse), 403)
+                if 'error' in master:
+                    errorResponse['steamid'] = Player.steamId
+                    errorResponse['name'] = Player.name
+                    errorResponse['error'] = 'Game library is private and needs to be set to public'
+                    errorResponse['fixurl'] = 'https://steamcommunity.com/profiles/' + str(Player.steamId) + '/edit/settings'
+                    errorResponse['avataruri'] = Player.avatarURI
+                    master['error'].append(errorResponse)
+                elif 'error' not in master:
+                    master['error'] = []
+                    errorResponse['steamid'] = Player.steamId
+                    errorResponse['name'] = Player.name
+                    errorResponse['error'] = 'Game library is private and needs to be set to public'
+                    errorResponse['fixurl'] = 'https://steamcommunity.com/profiles/' + str(Player.steamId) + '/edit/settings'
+                    errorResponse['avataruri'] = Player.avatarURI
+                    master['error'].append(errorResponse)
+            elif type(playerList) is dict:
+                playerList['player'] = playersToDict(Player)
+                gameLists.append(playerList)
+                master['players'].append(playerList['player'])
         zipped = zipLists(gameLists)
         games = []
         for game in zipped:
@@ -413,7 +423,7 @@ def fullCompare():
         master['games'] = games
 
     # print(bcolors.BOLD + bcolors.FAIL + 'Info for Games Shared Between ' + players[0].name + ' & ' + players[1].name + bcolors.ENDC)
-       printSharedGames(master)
+        printSharedGames(master)
         return jsonify(master)
     else:
         abort(401)
@@ -490,5 +500,5 @@ def userLookup():
                 if type(playerID) is int:
                     master[player] = STEAM_ID_ERROR_TYPE[playerID]
                 else:
-                    master[player] = playerID
+                    master[player] = playersToDict(getPlayerData(playerID))
             return jsonify(master)
