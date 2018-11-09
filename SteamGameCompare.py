@@ -18,8 +18,6 @@ webKey = settings['webKey']
 app = Flask(__name__)
 
 
-# Schema for player Object, maybe will add to DB eventually
-
 class Player:
 
     name = None
@@ -386,6 +384,7 @@ def fullCompare():
                     errorResponse['fixurl'] = 'https://steamcommunity.com/profiles/' + str(Player.steamId) + '/edit/settings'
                     errorResponse['avataruri'] = Player.avatarURI
                     master['error'].append(errorResponse)
+                    master['players'].append(playersToDict(Player))
                 elif 'error' not in master:
                     master['error'] = []
                     errorResponse['steamid'] = Player.steamId
@@ -394,6 +393,7 @@ def fullCompare():
                     errorResponse['fixurl'] = 'https://steamcommunity.com/profiles/' + str(Player.steamId) + '/edit/settings'
                     errorResponse['avataruri'] = Player.avatarURI
                     master['error'].append(errorResponse)
+                    master['players'].append(playersToDict(Player))
             elif type(playerList) is dict:
                 playerList['player'] = playersToDict(Player)
                 gameLists.append(playerList)
@@ -486,7 +486,7 @@ def single():
     else:
         abort(401)
 
-# Lookup a user's STEAMID64
+# Lookup a user's data, returning a Player Object
 @app.route('/steamcompare/steamidlookup', methods=['POST'])
 def userLookup():
     errorResponse = {}
