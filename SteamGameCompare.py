@@ -81,6 +81,7 @@ steamGameInfoBaseURI = 'http://store.steampowered.com/api/'
 steamPlayerInfoBaseURI = 'http://api.steampowered.com/'
 steamPlayerIDBaseURI = 'https://steamcommunity.com/id/'
 steamMediaBaseURI = 'http://media.steampowered.com/steamcommunity/public/images/apps/'
+steamWishlistBaseURI = 'https://store.steampowered.com/wishlist/profiles/'
 
 # A filler DB entry for games that have no categories
 
@@ -348,23 +349,24 @@ def getPlayerData(player):
     player.avatarURI = user['avatarfull']
     return player
 
+
+def getUserWishlist(player):
+    r = requests.get(steamWishlistBaseURI
+                    + str(player.steamId))
+        
+
+
 # APPLICATION ROUTE
 
 @app.errorhandler(404)
 def page_not_found(error):
     return ('This page does not exist', 404)
 
-
-@app.errorhandler(400)
-def bad_request(error):
-    return ('You need to give exactly two users', 400)
-
-
 @app.errorhandler(401)
 def bad_request(error):
     return ('You did not provide a json payload', 401)
 
-# Check for two players, check for complete dataset, return game list or throw.
+# Check for players, check for complete dataset, return game list or throw.
 @app.route('/steamcompare/full', methods=['POST'])
 def fullCompare():
     errorResponse = {}
@@ -413,7 +415,7 @@ def fullCompare():
         master['games'] = games
 
     # print(bcolors.BOLD + bcolors.FAIL + 'Info for Games Shared Between ' + players[0].name + ' & ' + players[1].name + bcolors.ENDC)
-       printSharedGames(master)
+        printSharedGames(master)
         return jsonify(master)
     else:
         abort(401)
