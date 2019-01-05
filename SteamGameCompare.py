@@ -26,7 +26,7 @@ class Player:
     steamId = None
 
 
-# This is for console output and will be eventually removed
+# This is for console output
 
 class bcolors:
 
@@ -312,7 +312,7 @@ def determineProperList(game):
     return gameRate
 
 
-# This is for console output and will, likely, be removed eventually
+# This is for console output
 
 def printSharedGames(gameList):
     games = gameList['games']
