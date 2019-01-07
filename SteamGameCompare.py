@@ -421,33 +421,12 @@ def fullCompare():
             print ('Building the game list for ' + str(Player.name))
             playerList= buildUserGameList(Player, wishlist)
             if playerList == 2:
-<<<<<<< HEAD
-                if 'error' in master:
-                    errorResponse['steamid'] = Player.steamId
-                    errorResponse['name'] = Player.name
-                    errorResponse['error'] = 'Game library is private and needs to be set to public'
-                    errorResponse['fixurl'] = 'https://steamcommunity.com/profiles/' + str(Player.steamId) + '/edit/settings'
-                    errorResponse['avataruri'] = Player.avatarURI
-                    master['error'].append(errorResponse)
-                    master['players'].append(playersToDict(Player))
-                elif 'error' not in master:
-                    master['error'] = []
-                    errorResponse['steamid'] = Player.steamId
-                    errorResponse['name'] = Player.name
-                    errorResponse['error'] = 'Game library is private and needs to be set to public'
-                    errorResponse['fixurl'] = 'https://steamcommunity.com/profiles/' + str(Player.steamId) + '/edit/settings'
-                    errorResponse['avataruri'] = Player.avatarURI
-                    master['error'].append(errorResponse)
-                    master['players'].append(playersToDict(Player))
-            elif type(playerList) is dict:
-=======
                 print(Player.name + ' is bad!')
                 errorResponse[Player.steamId] = Player.name \
                     + ' needs to set their "Game details" to public here: ' \
                     + Player.profileURI + 'edit/settings'
                 master['errors'].append(errorResponse)
             elif isinstance(playerList, dict):
->>>>>>> wishlistParse
                 playerList['player'] = playersToDict(Player)
                 gameLists.append(playerList)
                 master['players'].append(playerList['player'])
