@@ -1,6 +1,7 @@
 import requests
 import json
 import time
+import re
 from pymongo import MongoClient
 import datetime
 import xml.etree.ElementTree as ET
@@ -9,7 +10,7 @@ from flask import abort, redirect, url_for, request, jsonify
 
 client = MongoClient()
 db = client.gameData
-game = db.game
+gamedb = db.game
 
 settings = json.load(open('settings.json'))
 
@@ -79,6 +80,7 @@ steamGameInfoBaseURI = 'http://store.steampowered.com/api/'
 steamPlayerInfoBaseURI = 'http://api.steampowered.com/'
 steamPlayerIDBaseURI = 'https://steamcommunity.com/id/'
 steamMediaBaseURI = 'http://media.steampowered.com/steamcommunity/public/images/apps/'
+steamWishlistBaseURI = 'https://store.steampowered.com/wishlist/profiles/'
 
 # A filler DB entry for games that have no categories
 
@@ -121,18 +123,28 @@ def zipLists(userlists):
                     seenIDs.append(game['appid'])
                     game['users'] = []
                     game['users'].append(gamelist['player'])
+                    if 'wishlist' in game:
+                        game['wishlist'] = []
+                        game['wishlist'].append(gamelist['player'])
                     result.append(game)
                 elif game['appid'] in seenIDs:
                     for title in result:
                         if game['appid'] == title['appid']:
                             title['users'].append(gamelist['player'])
+                            if 'wishlist' in game:
+                                if 'wishlist' in title:
+                                    title['wishlist'].append(gamelist['player'])
+                                if 'wishlist' not in title:
+                                    title['wishlist'] = []
+                                    title['wishlist'].append(gamelist['player'])
+
             if game['appid'] not in dupeids:
                 pass
     return result
 
 
 def lookupSingle(gameID):
-    gameData = game.find_one({'appid':gameID},{'_id': False})
+    gameData = gamedb.find_one({'appid':gameID},{'_id': False})
     if gameData is not None:
         return gameData
     else:
@@ -185,12 +197,13 @@ def buildQuickGameList(id):
 
 # This is the "Full Compare." Basically it gets the user's owned games, then checks the local DB for it, and grabs details of it doesn't exist in the DB
 
-def buildUserGameList(id, debug=False):
+def buildUserGameList(player, wishlist=False, debug=False):
     gameList = []
     gameData = {}
+    userWishlist = []
     userListRaw = requests.get(steamOwnedGamesBaseURI
                                 + '/IPlayerService/GetOwnedGames/v1/?key=' \
-                                + webKey + '&steamId=' + str(id) \
+                                + webKey + '&steamId=' + player.steamId \
                                 + '&include_appinfo=1&include_played_free_games=1&format=json')
 
   # Use this to tell which game(s) break on a steam library (SHould no longer be needed, but keeping it just in case)
@@ -202,27 +215,38 @@ def buildUserGameList(id, debug=False):
   # This is a check to see if the user has their game visibility set to public, and returns 2 if they are not
 
     if userListJSON['response'] == {}:
-        brokenBoi = getPlayerData(id)
-        print (brokenBoi.name \
+        print (player.name \
             + ' needs to update their profile settings here: https://steamcommunity.com/profiles/' \
-            + str(brokenBoi.steamId) + '/edit/settings')
+            + str(player.steamId) + '/edit/settings')
         print("They need to set their 'Game Details' to 'Public'")
         return 2
     else:
         userGames = userListJSON['response']['games']
+        if wishlist == "True":
+            userWishlist = getUserWishlist(player)  
+            print(userWishlist)
+        if userWishlist != []:
+            for game in userWishlist:
+                userGames.append(game)
         totalGames = len(userGames)
         gameCursor = 0
         for g in userGames:
-
+            
       # This is/was for console output - Mostly because as of writing this, there's no frontend and sending people JSON is not as...parseable
             print(f"{gameCursor/totalGames*100:.1f} %", end="\r")
             gameCursor += 1
             userAppId = str(g['appid'])
             gameStatus = lookupSingle(g['appid'])
             if isinstance(gameStatus, dict):
-                gameStatus['thumbnail'] = steamMediaBaseURI + userAppId + '/' + g['img_logo_url'] + '.jpg'
-                gameStatus['steam_url'] = 'http://store.steampowered.com/app/' + userAppId
-                gameList.append(gameStatus)
+                if 'priority' not in g:
+                    gameStatus['thumbnail'] = 'https://steamcdn-a.akamaihd.net/steam/apps/' + userAppId +'/header_292x136.jpg'
+                    gameStatus['steam_url'] = 'http://store.steampowered.com/app/' + userAppId
+                    gameList.append(gameStatus)
+                if 'priority' in g:
+                    gameStatus['thumbnail'] = 'https://steamcdn-a.akamaihd.net/steam/apps/' + userAppId +'/header_292x136.jpg'
+                    gameStatus['steam_url'] = 'http://store.steampowered.com/app/' + userAppId
+                    gameStatus['wishlist'] = True
+                    gameList.append(gameStatus)
             elif gameStatus[0] == 0:
 
         # This is the Rate-limited case
@@ -232,11 +256,11 @@ def buildUserGameList(id, debug=False):
             elif gameStatus[0] == 1:
 
         # This is the success=false case
-                game.insert_one({'name':g['name'],
+                gamedb.insert_one({'name':g['name'],
                                 'appid':g['appid'],
                                 'categories':[nullCategory],
                                 'unavailable':True})
-                newGame = game.find_one({'appid':int(userAppId)},{'_id': False})
+                newGame = gamedb.find_one({'appid':int(userAppId)},{'_id': False})
                 newGame['thumbnail'] = steamMediaBaseURI + userAppId + '/' + g['img_logo_url'] + '.jpg'
                 newGame['steam_url'] = 'http://store.steampowered.com/app/' + userAppId
                 gameList.append(newGame)
@@ -247,37 +271,37 @@ def buildUserGameList(id, debug=False):
         # This happens with Expansion packs that are no longer for individual sale often.
         # Examples include F.E.A.R. Purseus Mandate/Extraction Point (appid's: 21110/21120)
 
-                if game.find_one({'appid':gameDetails[userAppId]['data']['steam_appid'] }):
+                if gamedb.find_one({'appid':gameDetails[userAppId]['data']['steam_appid'] }):
 
           # The game whose details were returned we have info for
 
-                    if not game.find_one({"appid":g['appid']}):
+                    if not gamedb.find_one({"appid":g['appid']}):
 
             # We do not have an ID with the game we searched for
 
                         if 'categories' in gameDetails[userAppId]['data']:
-                            game.insert_one({'name':g['name'],
+                            gamedb.insert_one({'name':g['name'],
                                             'appid':g['appid'],
                                             'categories':gameDetails[userAppId]['data']['categories'],
                                             'platforms':gameDetails[userAppId]['data']['platforms'],
                                             'is_free':gameDetails[userAppId]['data']['is_free']})
-                            newGame = game.find_one({'appid':int(userAppId)},{'_id': False})
-                            newGame['thumbnail'] = steamMediaBaseURI + userAppId + '/' + g['img_logo_url'] + '.jpg'
+                            newGame = gamedb.find_one({'appid':int(userAppId)},{'_id': False})
+                            newGame['thumbnail'] = 'https://steamcdn-a.akamaihd.net/steam/apps/' + userAppId +'/header_292x136.jpg'
                             newGame['steam_url'] = 'http://store.steampowered.com/app/' + userAppId
                             gameList.append(newGame)
                         else:
-                            game.insert_one({'name':g['name'],
+                            gamedb.insert_one({'name':g['name'],
                                             'appid':g['appid'],
                                             'categories':[nullCategory],
                                             'platforms':gameDetails[userAppId]['data']['platforms'],
                                             'is_free':gameDetails[userAppId]['data']['is_free']})
-                            newGame = game.find_one({'appid':int(userAppId)},{'_id': False})
-                            newGame['thumbnail'] = steamMediaBaseURI + userAppId + '/' + g['img_logo_url'] + '.jpg'
+                            newGame = gamedb.find_one({'appid':int(userAppId)},{'_id': False})
+                            newGame['thumbnail'] = 'https://steamcdn-a.akamaihd.net/steam/apps/' + userAppId +'/header_292x136.jpg'
                             newGame['steam_url'] = 'http://store.steampowered.com/app/' + userAppId
                             gameList.append(newGame)
-                    elif game.find_one({'appid':g['appid']}):
-                        newGame = game.find_one({'appid':int(userAppId)},{'_id': False})
-                        newGame['thumbnail'] = steamMediaBaseURI + userAppId + '/' + g['img_logo_url'] + '.jpg'
+                    elif gamedb.find_one({'appid':g['appid']}):
+                        newGame = gamedb.find_one({'appid':int(userAppId)},{'_id': False})
+                        newGame['thumbnail'] = 'https://steamcdn-a.akamaihd.net/steam/apps/' + userAppId +'/header_292x136.jpg'
                         newGame['steam_url'] = 'http://store.steampowered.com/app/' + userAppId
                         gameList.append(newGame)
                     else:
@@ -285,13 +309,13 @@ def buildUserGameList(id, debug=False):
             elif gameStatus[0] == 3:
                 newGameRaw = gameStatus[1]
                 newGame = newGameRaw[userAppId]['data']
-                newGameInsert = db.game.insert_one({'appid':newGame['steam_appid'],
+                newGameInsert = gamedb.insert_one({'appid':newGame['steam_appid'],
                                                     'name':newGame['name'],
                                                     'categories':newGame['categories'],
                                                     'platforms':newGame['platforms'],
                                                     'is_free':newGame['is_free']})
-                foundGame = game.find_one({'appid':int(userAppId)},{'_id': False})
-                foundGame['thumbnail'] = steamMediaBaseURI + userAppId + '/' + g['img_logo_url'] + '.jpg'
+                foundGame = gamedb.find_one({'appid':int(userAppId)},{'_id': False})
+                foundGame['thumbnail'] = 'https://steamcdn-a.akamaihd.net/steam/apps/' + userAppId +'/header_292x136.jpg'
                 foundGame['steam_url'] = 'http://store.steampowered.com/app/' + userAppId
                 gameList.append(foundGame)
     gameData['games'] = gameList
@@ -338,6 +362,8 @@ def getPlayerData(player):
                      + '/ISteamUser/GetPlayerSummaries/v0002/?key='
                      + webKey + '&steamids=' + str(player))
     userDataRaw = json.loads(r.text)
+    if userDataRaw['response']['players'] == []:
+        return 2
     user = userDataRaw['response']['players'][0]
     player = Player()
     player.name = user['personaname']
@@ -346,37 +372,56 @@ def getPlayerData(player):
     player.avatarURI = user['avatarfull']
     return player
 
+
+def getUserWishlist(player):
+    wishlist=[]
+    wishGame = {}
+    r = requests.get(steamWishlistBaseURI
+                    + str(player.steamId))
+    wishlistRaw = re.search(r'(?<=g_rgWishlistData = )[a-zA-Z\[\]\{\}":0-9,]+', r.text)
+    wishlist = json.loads(wishlistRaw.group(0))
+    #wishlistGameRaw = re.findall(r'{[\a-z:0-9]+}', wishlistRaw[0])
+    #for game in wishlistGameRaw:
+    #    rawGameId = re.search(r'[0-9][0-9][0-9][0-9][0-9][0-9],', game)
+    #    gameId = rawGameId.group(0)
+    #    wishGame['appid'] = int(gameId[:-1])
+    #    wishGame['wishlist'] = True
+    #    wishlist.append(wishGame)
+    return wishlist
+
+
 # APPLICATION ROUTE
 
 @app.errorhandler(404)
 def page_not_found(error):
     return ('This page does not exist', 404)
 
-
-@app.errorhandler(400)
-def bad_request(error):
-    return ('You need to give exactly two users', 400)
-
-
 @app.errorhandler(401)
 def bad_request(error):
     return ('You did not provide a json payload', 401)
 
-# Check for two players, check for complete dataset, return game list or throw.
+# Check for players, check for complete dataset, return game list or throw.
 @app.route('/steamcompare/full', methods=['POST'])
 def fullCompare():
-    errorResponse = {}
+    wishlist = False
     gameLists=[]
     master = {}
     master['players'] = []
+    master['errors'] = []
     print ('We are starting a full comparison')
     if request.data:
         playerData = request.get_json(force=True)
+        if 'wishlist' in playerData:
+            wishlist = playerData['wishlist']
         for playerId in playerData['players']:
+            errorResponse = {}
             Player = getPlayerData(playerId)
+            if isinstance(Player, int):
+                continue
             print ('Building the game list for ' + str(Player.name))
-            playerList= buildUserGameList(int(Player.steamId))
+            playerList= buildUserGameList(Player, wishlist)
             if playerList == 2:
+<<<<<<< HEAD
                 if 'error' in master:
                     errorResponse['steamid'] = Player.steamId
                     errorResponse['name'] = Player.name
@@ -395,6 +440,14 @@ def fullCompare():
                     master['error'].append(errorResponse)
                     master['players'].append(playersToDict(Player))
             elif type(playerList) is dict:
+=======
+                print(Player.name + ' is bad!')
+                errorResponse[Player.steamId] = Player.name \
+                    + ' needs to set their "Game details" to public here: ' \
+                    + Player.profileURI + 'edit/settings'
+                master['errors'].append(errorResponse)
+            elif isinstance(playerList, dict):
+>>>>>>> wishlistParse
                 playerList['player'] = playersToDict(Player)
                 gameLists.append(playerList)
                 master['players'].append(playerList['player'])
@@ -496,9 +549,31 @@ def userLookup():
             players = playerData['players']
             master = {}
             for player in players:
+                print (player)
                 playerID = getUserSteamID(player)
                 if type(playerID) is int:
                     master[player] = STEAM_ID_ERROR_TYPE[playerID]
                 else:
                     master[player] = playersToDict(getPlayerData(playerID))
             return jsonify(master)
+
+@app.route('/steamcompare/returnWishlist', methods=['POST'])
+def returnWishlist():
+    errorResponse = {}
+    if request.data:
+        if request.data:
+            playerData = request.get_json(force=True)
+            players = playerData['players']
+            master = {}
+            for player in players:
+                playerInfo = getPlayerData(player)
+                if type(playerInfo) is int:
+                    errorResponse[player] = STEAM_ID_ERROR_TYPE[playerInfo]
+                else:
+                    master[playerInfo.steamId] = getUserWishlist(playerInfo)
+                    if master[playerInfo.steamId] != None:
+                        print("Added games")
+            if errorResponse != {}:
+                return jsonify(errorResponse)
+            else:
+                return jsonify(master)
