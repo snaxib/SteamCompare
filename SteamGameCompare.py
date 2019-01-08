@@ -519,7 +519,7 @@ def single():
         abort(401)
 
 # Lookup a user's data, returning a Player Object
-@app.route('/steamcompare/steamidlookup', methods=['POST'])
+@app.route('/steamcompare/steamuserlookup', methods=['POST'])
 def userLookup():
     errorResponse = {}
     if request.data:
@@ -527,13 +527,24 @@ def userLookup():
             playerData = request.get_json(force=True)
             players = playerData['players']
             master = {}
+            master['players'] = []
+            master['errors'] = []
             for player in players:
-                print (player)
-                playerID = getUserSteamID(player)
-                if type(playerID) is int:
-                    master[player] = STEAM_ID_ERROR_TYPE[playerID]
-                else:
-                    master[player] = playersToDict(getPlayerData(playerID))
+                try:
+                    int(player)
+                    integer = True
+                except ValueError:
+                    integer = False
+                if integer == False:
+                    playerID = getUserSteamID(player)
+                    if type(playerID) is int:
+                        master["errors"].append(STEAM_ID_ERROR_TYPE[playerID])
+                    else:
+                        master["players"].append(playersToDict(getPlayerData(playerID)))
+                elif integer == True:
+                    master["players"].append(playersToDict(getPlayerData(player)))
+            print("we're packing it up")
+            print(master)
             return jsonify(master)
 
 @app.route('/steamcompare/returnWishlist', methods=['POST'])

@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <link href="https://fonts.googleapis.com/css?family=Dosis:400,700" rel="stylesheet">
+    <link href="style.css" rel="stylesheet">
+    <script>
+        var players = [];
+        function getPlayers(){
+            event.preventDefault();
+            playerId = document.players.player.value;
+            payload = JSON.stringify({"players":[playerId]})
+            var xhttp = new XMLHttpRequest();
+            xhttp.open("POST","http://localhost:5000/steamcompare/steamuserlookup", true);
+            xhttp.setRequestHeader("Content-Type","application/json");
+            xhttp.onload = function(){
+                playerDataRaw = JSON.parse(xhttp.responseText);
+                const app = document.getElementById('root');
+                row = document.createElement('div');
+                row.setAttribute("class","tableBody");
+                playerInfo = document.createElement('div');
+                playerInfo.setAttribute("class","tableRow");
+                playerImageRow = document.createElement('div');
+                playerImageRow.setAttribute("class","imageRow");
+                playerImage = document.createElement("img");
+                app.appendChild(row)
+                row.appendChild(playerImageRow);
+                row.appendChild(playerInfo);
+                playerImageRow.appendChild(playerImage);
+                playerInfo.textContent = playerDataRaw.players[0].name;
+                playerImage.setAttribute("src",playerDataRaw.players[0].avatarURI);
+                playerImage.setAttribute("height", 64);
+                playerImage.setAttribute("width", 64);
+                players.push(playerDataRaw.players[0].steamid);
+                console.log(players);
+            }
+            xhttp.send(payload)         
+        }
+        function handleClick() {
+            event.preventDefault(); // disable normal form submit behavior
+            payload = JSON.stringify({"players":players,"wishlist":"True"}); // Not sure on the need of .value here, it's been a while.
+            const app = document.getElementById('root');
+            const container = document.createElement('div');
+            container.setAttribute('class', 'container');
+            app.appendChild(container);
+            var xhttp = new XMLHttpRequest();
+            xhttp.open("POST","http://localhost:5000/steamcompare/full", true);
+            xhttp.setRequestHeader("Content-Type","application/json");
+            xhttp.onload = function(){
+                console.log("Got Return!");
+                var gameReturn = JSON.parse(xhttp.responseText);
+                var gameList = gameReturn.games;
+                gameReturn.games.forEach(function(game){
+                    console.log(game.name);
+                    const card = document.createElement('div');
+                    card.setAttribute('class', 'card');
+                    const h1 = document.createElement('h1');
+                    h1.textContent = game.name;
+                    container.appendChild(card);
+                    card.appendChild(h1);
+                    game.users.forEach(function(user){
+                        const p = document.createElement('p');
+                        p.textContent = `${user.name}`;
+                        card.appendChild(p);
+                    })
+                })
+            }
+            xhttp.send(payload)
+            return false; // prevent further bubbling of event
+          }
+    </script>
+</head>
+    <body>
+    
+    <form name="players" onSubmit="return getPlayers()">
+         Player id:
+         <input type="text" name="player" />
+         <input name="Submit" type="submit" value="Add Player" />
+    </form>
+    <form name="yourForm" onSubmit="return handleClick()">
+         <input name="Submit"  type="submit" value="Compare Libraries" />
+    </form>
+    <div id="root"></div>
+    </body>
+    </html>
