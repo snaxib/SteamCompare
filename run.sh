@@ -1,4 +1,4 @@
 #!/bin/zsh
 
-export FLASK_APP=SteamGameCompare.py
+export FLASK_APP=app.py
 python3 -m flask run

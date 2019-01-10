@@ -6,13 +6,15 @@ from pymongo import MongoClient
 import datetime
 import xml.etree.ElementTree as ET
 from flask import Flask
-from flask import abort, redirect, url_for, request, jsonify
-
-client = MongoClient()
-db = client.gameData
-gamedb = db.game
+from flask import abort, redirect, url_for, request, jsonify, Markup
 
 settings = json.load(open('settings.json'))
+
+dbhost = 'mongodb://' + settings['dbuser'] + ':' + settings['dbpass'] + '@ds151614.mlab.com:51614/gamedata'
+client = MongoClient(host=[dbhost])
+db = client.gamedata
+gamedb = db.game
+
 
 webKey = settings['webKey']
 
@@ -567,3 +569,9 @@ def returnWishlist():
                 return jsonify(errorResponse)
             else:
                 return jsonify(master)
+    
+@app.route('/', methods=['GET'])
+def index():
+    webImport = open('home.html')
+    webpage = Markup(webImport.read())
+    return webpage

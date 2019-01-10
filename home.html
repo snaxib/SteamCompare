@@ -3,7 +3,6 @@
 
 <head>
     <link href="https://fonts.googleapis.com/css?family=Dosis:400,700" rel="stylesheet">
-    <link href="style.css" rel="stylesheet">
     <script>
         var players = [];
         function getPlayers(){
@@ -11,7 +10,7 @@
             playerId = document.players.player.value;
             payload = JSON.stringify({"players":[playerId]})
             var xhttp = new XMLHttpRequest();
-            xhttp.open("POST","http://localhost:5000/steamcompare/steamuserlookup", true);
+            xhttp.open("POST","http://limitless-oasis-80831.herokuapp.com/steamcompare/steamuserlookup", true);
             xhttp.setRequestHeader("Content-Type","application/json");
             xhttp.onload = function(){
                 playerDataRaw = JSON.parse(xhttp.responseText);
@@ -44,7 +43,7 @@
             container.setAttribute('class', 'container');
             app.appendChild(container);
             var xhttp = new XMLHttpRequest();
-            xhttp.open("POST","http://localhost:5000/steamcompare/full", true);
+            xhttp.open("POST","http://limitless-oasis-80831.herokuapp.com/steamcompare/full", true);
             xhttp.setRequestHeader("Content-Type","application/json");
             xhttp.onload = function(){
                 console.log("Got Return!");
@@ -52,23 +51,89 @@
                 var gameList = gameReturn.games;
                 gameReturn.games.forEach(function(game){
                     console.log(game.name);
+                    var multiplayer = [];
                     const card = document.createElement('div');
-                    card.setAttribute('class', 'card');
-                    const h1 = document.createElement('h1');
-                    h1.textContent = game.name;
+                    card.setAttribute('class', 'row');
+                    const h3 = document.createElement('h3');
                     container.appendChild(card);
-                    card.appendChild(h1);
+                    imgDiv = document.createElement('div');
+                    imgDiv.setAttribute('class','image-col-md-3');
+                    card.appendChild(imgDiv);
+                    img = document.createElement('img');
+                    img.setAttribute('src',game.thumbnail);
+                    img.setAttribute('alt',game.name);
+                    imgDiv.appendChild(img);
                     game.users.forEach(function(user){
-                        const p = document.createElement('p');
-                        p.textContent = `${user.name}`;
-                        card.appendChild(p);
-                    })
+                        userDiv = document.createElement('div');
+                        userDiv.setAttribute('class','users-col-md-5')
+                        card.append(userDiv);
+                        const userImg = document.createElement('img');
+                        userImg.setAttribute('src',user.avatarURI);
+                        userImg.setAttribute('height','66px');
+                        userImg.setAttribute('width','66px');
+                        userDiv.appendChild(userImg);
+                    });
+                    game.multi.forEach(function(multiType){
+                        if (multiType == 'coop' || multiType == 'multiplayer'){
+                            multiDiv = document.createElement('div');
+                            multiDiv.setAttribute('class','multiplayer');
+                            multiGame = document.createElement('p');
+                            multiGame.textContent = multiType;
+                            multiDiv.appendChild(multiGame)
+                            card.appendChild(multiDiv);
+                        }
+                    });
                 })
             }
             xhttp.send(payload)
             return false; // prevent further bubbling of event
           }
     </script>
+    <style>
+    #root {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.container {
+  display: flex;
+  flex-wrap: wrap;
+}
+.image-col-md-3{
+    float: left;
+}
+.user-col-md-5{
+    float: top;
+    align: right;
+}
+.user-col-md-5:nth-child(even){
+    float:bottom;
+}
+.row {
+    display: table-row;
+    border: 1px solid gray;
+    height: 136px;
+    width: 100%;
+    width: 100vw;
+    padding-bottom: 5px;
+    padding-top: 5px;
+}
+.row {
+    display: table-row;
+    border: 1px solid gray;
+    height: 136px;
+    width: 100%;
+    width: 100vw;
+    padding-bottom: 5px;
+    padding-top: 5px;
+}
+.row:nth-child(odd){
+    background-color:dimgrey;
+}
+.multiplayer{
+    float: right
+}
+
+</style>
 </head>
     <body>
     
@@ -78,8 +143,9 @@
          <input name="Submit" type="submit" value="Add Player" />
     </form>
     <form name="yourForm" onSubmit="return handleClick()">
-         <input name="Submit"  type="submit" value="Compare Libraries" />
-    </form>
+            <input name="Submit"  type="submit" value="Compare Libraries" />
+        </form>
+    &nbsp;
     <div id="root"></div>
     </body>
     </html>
