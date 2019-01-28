@@ -377,18 +377,10 @@ def getPlayerData(player):
 
 def getUserWishlist(player):
     wishlist=[]
-    wishGame = {}
     r = requests.get(steamWishlistBaseURI
                     + str(player.steamId))
     wishlistRaw = re.search(r'(?<=g_rgWishlistData = )[a-zA-Z\[\]\{\}":0-9,]+', r.text)
     wishlist = json.loads(wishlistRaw.group(0))
-    #wishlistGameRaw = re.findall(r'{[\a-z:0-9]+}', wishlistRaw[0])
-    #for game in wishlistGameRaw:
-    #    rawGameId = re.search(r'[0-9][0-9][0-9][0-9][0-9][0-9],', game)
-    #    gameId = rawGameId.group(0)
-    #    wishGame['appid'] = int(gameId[:-1])
-    #    wishGame['wishlist'] = True
-    #    wishlist.append(wishGame)
     return wishlist
 
 
@@ -459,49 +451,6 @@ def fullCompare():
     # print(bcolors.BOLD + bcolors.FAIL + 'Info for Games Shared Between ' + players[0].name + ' & ' + players[1].name + bcolors.ENDC)
         printSharedGames(master)
         return jsonify(master)
-    else:
-        abort(401)
-
-# Same as /steamcompare/full but doesn't care about local databae or app details
-@app.route('/steamcompare/quick', methods=['POST'])
-def quickCompare():
-    errorResponse = {}
-    print('We are starting a quick comparison')
-    if request.data:
-        players = request.get_json(force=True)
-        if players['player1'] == players['player2']:
-            return ('you put in the same player twice', 400)
-        if len(players) != 2:
-            abort(400)
-        player1steamId = players['player1']
-        player2steamId = players['player2']
-        player1 = getPlayerData(player1steamId)
-        player2 = getPlayerData(player2steamId)
-        print ('1: Building quick game list for ' + str(player1.name))
-        playerList1 = buildQuickGameList(int(player1.steamId))
-        print ('2: Building quick game list for ' + str(player2.name))
-        playerList2 = buildQuickGameList(int(player2.steamId))
-        if playerList1 == 2:
-            print('Player 1 is bad!')
-            errorResponse['player1'] = player1.name \
-                + ' needs to set their "Game details" to public here: ' \
-                + player1.profileURI + 'edit/settings'
-        if playerList2 == 2:
-            print('Player 2 is bad!')
-            errorResponse['player2'] = player2.name \
-                + ' needs to set their "Game details" to public here: ' \
-                + player2.profileURI + 'edit/settings'
-        if errorResponse != {}:
-            return (jsonify(errorResponse), 403)
-        zipped = zipLists(playerList1['response']['games'],
-                          playerList2['response']['games'])
-        master = {}
-        master['players'] = []
-        for playerId in playerData['players']:
-            print (playerid)
-            master['players'].append(playersToDict(getPlayerData(playerId)))
-        master['games'] = zipped
-        return jsonify(master), 200
     else:
         abort(401)
 
