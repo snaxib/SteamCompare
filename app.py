@@ -9,10 +9,12 @@ from flask import Flask
 from flask import abort, redirect, url_for, request, jsonify, Markup
 
 settings = json.load(open('settings.json'))
-
-dbhost = 'mongodb://' + settings['dbuser'] + ':' + settings['dbpass'] + '@ds151614.mlab.com:51614/gamedata'
-client = MongoClient(host=[dbhost])
-db = client.gamedata
+if 'dbuser' in settings:
+    dbhost = 'mongodb://' + settings['dbuser'] + ':' + settings['dbpass'] + settings['dbhost']
+    client = MongoClient(host=[dbhost])
+else:
+    client = MongoClient()
+db = client.gameData
 gamedb = db.game
 
 
@@ -311,11 +313,11 @@ def buildUserGameList(player, wishlist=False, debug=False):
             elif gameStatus[0] == 3:
                 newGameRaw = gameStatus[1]
                 newGame = newGameRaw[userAppId]['data']
-                newGameInsert = gamedb.insert_one({'appid':newGame['steam_appid'],
-                                                    'name':newGame['name'],
-                                                    'categories':newGame['categories'],
-                                                    'platforms':newGame['platforms'],
-                                                    'is_free':newGame['is_free']})
+                gamedb.insert_one({'appid':newGame['steam_appid'],
+                                    'name':newGame['name'],
+                                    'categories':newGame['categories'],
+                                    'platforms':newGame['platforms'],
+                                    'is_free':newGame['is_free']})
                 foundGame = gamedb.find_one({'appid':int(userAppId)},{'_id': False})
                 foundGame['thumbnail'] = 'https://steamcdn-a.akamaihd.net/steam/apps/' + userAppId +'/header_292x136.jpg'
                 foundGame['steam_url'] = 'http://store.steampowered.com/app/' + userAppId
@@ -447,8 +449,6 @@ def fullCompare():
             else:
                 print ('the value of list was ' + str(list) + '...')
         master['games'] = games
-
-    # print(bcolors.BOLD + bcolors.FAIL + 'Info for Games Shared Between ' + players[0].name + ' & ' + players[1].name + bcolors.ENDC)
         printSharedGames(master)
         return jsonify(master)
     else:
@@ -472,7 +472,6 @@ def single():
 # Lookup a user's data, returning a Player Object
 @app.route('/steamcompare/steamuserlookup', methods=['POST'])
 def userLookup():
-    errorResponse = {}
     if request.data:
         if request.data:
             playerData = request.get_json(force=True)
