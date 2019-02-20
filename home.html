@@ -62,7 +62,7 @@
                     console.log(game.name);
                     var multiplayer = [];
                     const gameRow = document.createElement('div');
-                    gameRow.setAttribute('class', 'gameRow');
+                    gameRow.setAttribute('class', 'gameRowSP');
                     const h3 = document.createElement('h3');
                     container.appendChild(gameRow);
                     imgDiv = document.createElement('div');
@@ -86,16 +86,12 @@
                         userContainer.appendChild(userDiv);
                     });
                     gameRow.appendChild(userContainer);
-                    game.multi.forEach(function(multiType){
-                        if (multiType == 'coop' || multiType == 'multiplayer'){
-                            multiDiv = document.createElement('div');
-                            multiDiv.setAttribute('class','multiplayer');
-                            multiGame = document.createElement('p');
-                            multiGame.textContent = multiType;
-                            multiDiv.appendChild(multiGame)
-                            gameRow.appendChild(multiDiv);
-                        }
-                    });
+                    if (game.multi.indexOf("coop") > -1){
+                        gameRow.setAttribute("class", "gameRowCOOP")
+                    }
+                    else if (game.multi.indexOf("multiplayer") > -1){
+                        gameRow.setAttribute("class", "gameRowMP")
+                    };
                 })
             }
             xhttp.send(payload)
@@ -109,11 +105,7 @@
   flex-direction: column;
   padding: 2pc;
 }
-.multiplayer{
-    display: flex;
-    flex-direction: row;
-    align-content: flex-end;
-}
+
 .playerContainer{
   display: flex;
   flex-direction: column;
@@ -144,10 +136,10 @@
     flex-direction: column;
     flex-flow: column wrap;
 }
-.gameRow {
+.gameRowSP {
     display: flex;
     flex-direction: row;
-    border: 1px solid gray;
+    border: 1px solid black;
     background-color: darkgrey;
     height: 140px;
     width: 100%;
@@ -155,7 +147,29 @@
     padding-bottom: 5px;
     padding-top: 5px;
 }
-.gameRow:nth-child(odd){
+.gameRowMP {
+    display: flex;
+    flex-direction: row;
+    border: 1px solid black;
+    background-color: darkslateblue;
+    height: 140px;
+    width: 100%;
+    width: 100vw;
+    padding-bottom: 5px;
+    padding-top: 5px;
+}
+.gameRowCOOP {
+    display: flex;
+    flex-direction: row;
+    border: 1px solid black;
+    background-color: darkolivegreen;
+    height: 140px;
+    width: 100%;
+    width: 100vw;
+    padding-bottom: 5px;
+    padding-top: 5px;
+}
+.gameRowSP:nth-child(odd){
     background-color:dimgrey;
 }
 

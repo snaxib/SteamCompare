@@ -55,7 +55,7 @@ STEAM_ID_ERROR_TYPE = [{
     'type':'STEAM_ID_LOOKUP_ERROR',
     'eror':'unknown_error',
     'code':1,
-    'message':'An unknown erorr occured when looking up the users steam id.'
+    'message':'An unknown error occured when looking up the users steam id.'
 }
 
 ]
