@@ -272,7 +272,7 @@ def buildUserGameList(player, wishlist=False, debug=False):
                 gameDetails = gameStatus[1]
 
         # This is the case where Multiple games return the game details for the same game
-        # This happens with Expansion packs that are no longer for individual sale often.
+        # This happens with Expansion packs that are no longer for individual sale.
         # Examples include F.E.A.R. Purseus Mandate/Extraction Point (appid's: 21110/21120)
 
                 if gamedb.find_one({'appid':gameDetails[userAppId]['data']['steam_appid'] }):
