@@ -60,6 +60,12 @@
                 var gameReturn = JSON.parse(xhttp.responseText);
                 gameReturn.games.forEach(function(game){
                     console.log(game.name);
+                    var numPlayers = 0;
+                    numPlayers = game.users.length;
+                    game.numUsers = numPlayers;
+                })
+                gameReturn.games.sort((a,b) => parseFloat(b.numUsers) - parseFloat(a.numUsers));
+                gameReturn.games.forEach(function(game){
                     var multiplayer = [];
                     const gameRow = document.createElement('div');
                     gameRow.setAttribute('class', 'gameRowSP');
