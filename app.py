@@ -7,9 +7,10 @@ import datetime
 import xml.etree.ElementTree as ET
 from flask import Flask
 from flask import abort, redirect, url_for, request, jsonify, Markup
+import populateAppList
 
 settings = json.load(open('settings.json'))
-if 'dbuser' in settings:
+if settings['env']=="prod":
     dbhost = 'mongodb://' + settings['dbuser'] + ':' + settings['dbpass'] + settings['dbhost']
     client = MongoClient(host=[dbhost])
 else:
@@ -144,8 +145,7 @@ def zipLists(userlists):
 
             if game['appid'] not in dupeids:
                 pass
-    return result
-
+    return result 
 
 def lookupSingle(gameID):
     gameData = gamedb.find_one({'appid':gameID},{'_id': False})
@@ -473,53 +473,102 @@ def single():
 @app.route('/steamcompare/steamuserlookup', methods=['POST'])
 def userLookup():
     if request.data:
-        if request.data:
-            playerData = request.get_json(force=True)
-            players = playerData['players']
-            master = {}
-            master['players'] = []
-            master['errors'] = []
-            for player in players:
-                try:
-                    int(player)
-                    integer = True
-                except ValueError:
-                    integer = False
-                if integer == False:
-                    playerID = getUserSteamID(player)
-                    if type(playerID) is int:
-                        master["errors"].append(STEAM_ID_ERROR_TYPE[playerID])
-                    else:
-                        master["players"].append(playersToDict(getPlayerData(playerID)))
-                elif integer == True:
-                    master["players"].append(playersToDict(getPlayerData(player)))
-            print("we're packing it up")
-            print(master)
-            return jsonify(master)
+        playerData = request.get_json(force=True)
+        players = playerData['players']
+        master = {}
+        master['players'] = []
+        master['errors'] = []
+        for player in players:
+            try:
+                int(player)
+                integer = True
+            except ValueError:
+                integer = False
+            if integer == False:
+                playerID = getUserSteamID(player)
+                if type(playerID) is int:
+                    master["errors"].append(STEAM_ID_ERROR_TYPE[playerID])
+                else:
+                    master["players"].append(playersToDict(getPlayerData(playerID)))
+            elif integer == True:
+                master["players"].append(playersToDict(getPlayerData(player)))
+        print(master)
+        return jsonify(master)
 
 @app.route('/steamcompare/returnWishlist', methods=['POST'])
 def returnWishlist():
     errorResponse = {}
     if request.data:
-        if request.data:
-            playerData = request.get_json(force=True)
-            players = playerData['players']
-            master = {}
-            for player in players:
-                playerInfo = getPlayerData(player)
-                if type(playerInfo) is int:
-                    errorResponse[player] = STEAM_ID_ERROR_TYPE[playerInfo]
-                else:
-                    master[playerInfo.steamId] = getUserWishlist(playerInfo)
-                    if master[playerInfo.steamId] != None:
-                        print("Added games")
-            if errorResponse != {}:
-                return jsonify(errorResponse)
+        playerData = request.get_json(force=True)
+        players = playerData['players']
+        master = {}
+        for player in players:
+            playerInfo = getPlayerData(player)
+            if type(playerInfo) is int:
+                errorResponse[player] = STEAM_ID_ERROR_TYPE[playerInfo]
             else:
-                return jsonify(master)
+                master[playerInfo.steamId] = getUserWishlist(playerInfo)
+                if master[playerInfo.steamId] != None:
+                    print("Added games")
+        if errorResponse != {}:
+            return jsonify(errorResponse)
+        else:
+            return jsonify(master)
     
 @app.route('/', methods=['GET'])
 def index():
     webImport = open('home.html')
     webpage = Markup(webImport.read())
     return webpage
+
+@app.route('/getNewApps', methods=['POST'])
+def popAppList():
+    if 'secretKey' in request.headers:
+        if request.headers['secretKey'] == settings['secretKey']:
+            populateAppList.populateApps()
+        else:
+            abort(403)
+    else:
+        print(payload)
+        abort(403)
+    
+@app.route('/refreshSingle',methods=['POST'])
+def refreshSingle():
+    if request.data:
+        payload = request.get_json(force=True)
+        if 'gameID' in payload:
+            gameID = str(payload['gameID'])
+            gameDetails = lookupSingle(int(gameID))
+            if type(gameDetails) is dict:
+                gamedb.delete_one({'appid':int(gameID)})
+            elif gameDetails[0] == 3:
+                if 'categories' in gameDetails[1][gameID]['data']:
+                    gamedb.insert_one({'name':gameDetails[1][gameID]['data']['name'],
+                                    'appid':gameDetails[1][gameID]['data']['steam_appid'],
+                                    'categories':gameDetails[1][gameID]['data']['categories'],
+                                    'platforms':gameDetails[1][gameID]['data']['platforms'],
+                                    'is_free':gameDetails[1][gameID]['data']['is_free']})
+                    newGame = gamedb.find_one({'appid':int(gameID)},{'_id': False})
+                    newGame['thumbnail'] = 'https://steamcdn-a.akamaihd.net/steam/apps/' + gameID +'/header_292x136.jpg'
+                    newGame['steam_url'] = 'http://store.steampowered.com/app/' + gameID
+                    return jsonify(newGame)
+                else:
+                    gamedb.insert_one({'name':gameDetails[1][gameID]['data']['name'],
+                                    'appid':gameDetails[1][gameID]['data']['steam_appid'],
+                                    'categories':[nullCategory],
+                                    'platforms':gameDetails[1][gameID]['data']['platforms'],
+                                    'is_free':gameDetails[1][gameID]['data']['is_free']})
+                    newGame = gamedb.find_one({'appid':int(gameID)},{'_id': False})
+                    newGame['thumbnail'] = 'https://steamcdn-a.akamaihd.net/steam/apps/' + gameID +'/header_292x136.jpg'
+                    newGame['steam_url'] = 'http://store.steampowered.com/app/' + gameID
+                    return jsonify(newGame)
+            elif gameDetails[0] == 0:
+                return "Rate Limited"
+            elif gameDetails[0] == 1:
+                return "Game does not exist"
+            elif gameDetails[0] == 2:
+                return "it's fucked"
+    else:
+        abort(400)
+            
+
