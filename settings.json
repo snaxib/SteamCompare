@@ -1,0 +1,8 @@
+{
+  "webKey":"REPLACE",
+  "dbuser":"REPLACE",
+  "dbpass":"REPLACE",
+  "dbhost":"REPLACE",
+  "env":"dev",
+  "secretKey":"REPLACE"
+}
