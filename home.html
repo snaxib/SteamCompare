@@ -5,6 +5,13 @@
     <link href="https://fonts.googleapis.com/css?family=Dosis:400,700" rel="stylesheet">
     <script>
         var players = [];
+        // Hides rows through CSS, so it also applies to results already shown.
+        function setFilter(value){
+            document.getElementById('root').dataset.filter = value;
+        }
+        function setWishlist(on){
+            document.getElementById('root').dataset.wishlist = on ? "on" : "off";
+        }
         function getPlayers(){
             event.preventDefault();
             playerId = document.players.player.value;
@@ -74,10 +81,16 @@
                     imgDiv = document.createElement('div');
                     imgDiv.setAttribute('class','gameImage');
                     gameRow.appendChild(imgDiv);
+                    const storeLink = document.createElement('a');
+                    storeLink.setAttribute('href', 'https://store.steampowered.com/app/' + game.appid);
+                    storeLink.setAttribute('target', '_blank');
+                    storeLink.setAttribute('rel', 'noopener');
+                    storeLink.setAttribute('title', game.name + ' on Steam');
                     img = document.createElement('img');
                     img.setAttribute('src',game.thumbnail);
                     img.setAttribute('alt',game.name);
-                    imgDiv.appendChild(img);
+                    storeLink.appendChild(img);
+                    imgDiv.appendChild(storeLink);
                     userContainer = document.createElement('div');
                     userContainer.setAttribute('class','userContainer');
                     game.users.forEach(function(user){
@@ -99,6 +112,39 @@
                     else if (game.multi.indexOf("multiplayer") > -1){
                         gameRow.setAttribute("class", "gameRowMP")
                     };
+                    // Wishlisted games only one player has are hidden unless the toggle is on.
+                    if (game.users.length < 2){
+                        gameRow.classList.add("notShared");
+                    }
+                    // game.wishlist lists the players who have it on their wishlist.
+                    if (game.wishlist && game.wishlist.length > 0){
+                        gameRow.classList.add("wishlisted");
+                        const wishDiv = document.createElement('div');
+                        wishDiv.setAttribute('class', 'wishlistInfo');
+                        const who = document.createElement('div');
+                        who.textContent = "On wishlist: " + game.wishlist.map(p => p.name).join(", ");
+                        const price = document.createElement('div');
+                        price.setAttribute('class', 'price');
+                        if (game.price){
+                            price.textContent = game.price.final;
+                            if (game.price.discount_percent > 0){
+                                price.textContent = "-" + game.price.discount_percent + "% " + game.price.final
+                                    + " (was " + game.price.initial + ")";
+                            }
+                        } else if (game.is_free){
+                            price.textContent = "Free";
+                        } else {
+                            price.textContent = "No price listed";
+                        }
+                        wishDiv.appendChild(who);
+                        if (game.owners && game.owners.length > 0){
+                            const owners = document.createElement('div');
+                            owners.textContent = "Owned by: " + game.owners.map(p => p.name).join(", ");
+                            wishDiv.appendChild(owners);
+                        }
+                        wishDiv.appendChild(price);
+                        gameRow.appendChild(wishDiv);
+                    }
                 })
             }
             xhttp.send(payload)
@@ -180,6 +226,35 @@
     background-color:dimgrey;
 }
 
+.filters {
+    margin: 0.5pc 0;
+}
+.filters label {
+    margin-left: 1pc;
+}
+.filters .toggle {
+    margin-left: 2pc;
+}
+/* Coop Only: green rows. Competitive Multiplayer: blue/purple rows. */
+#root[data-filter="coop"] .gameRowMP,
+#root[data-filter="coop"] .gameRowSP,
+#root[data-filter="mp"] .gameRowCOOP,
+#root[data-filter="mp"] .gameRowSP,
+#root[data-wishlist="off"] .gamesContainer > div.notShared,
+#root[data-wishlist="on"] .gamesContainer > div:not(.wishlisted) {
+    display: none;
+}
+.wishlistInfo {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 0 1pc;
+}
+.price {
+    font-size: 1.4em;
+    font-weight: bold;
+}
+
 
 </style>
 </head>
@@ -193,7 +268,13 @@
     <form name="yourForm" onSubmit="return handleClick()">
             <input name="Submit"  type="submit" value="Compare Libraries" />
         </form>
-    &nbsp;
-    <div id="root"></div>
+    <div class="filters">
+        Show:
+        <label><input type="radio" name="gameFilter" value="all" checked onchange="setFilter(this.value)" /> All games</label>
+        <label><input type="radio" name="gameFilter" value="coop" onchange="setFilter(this.value)" /> Coop Only</label>
+        <label><input type="radio" name="gameFilter" value="mp" onchange="setFilter(this.value)" /> Competitive Multiplayer</label>
+        <label class="toggle"><input type="checkbox" name="wishlistToggle" onchange="setWishlist(this.checked)" /> Wishlist Games</label>
+    </div>
+    <div id="root" data-filter="all" data-wishlist="off"></div>
     </body>
     </html>

@@ -123,7 +123,9 @@ def zipLists(userlists):
     dupeids = [x for n, x in enumerate(rawids) if x in rawids[:n]]
     for gamelist in userlists:
         for game in gamelist['games']:
-            if game['appid'] in dupeids:
+            # Shared games, plus anything on anyone's wishlist (the page hides
+            # unshared wishlist games unless its Wishlist Games toggle is on).
+            if game['appid'] in dupeids or 'wishlist' in game:
                 if game['appid'] not in seenIDs:
                     seenIDs.append(game['appid'])
                     game['users'] = []
@@ -248,6 +250,7 @@ def buildUserGameList(player, wishlist=False, debug=False):
             print(f"{gameCursor/totalGames*100:.1f} %", end="\r")
             gameCursor += 1
             userAppId = str(g['appid'])
+            listLength = len(gameList)
             gameStatus = lookupSingle(g['appid'])
             if isinstance(gameStatus, dict):
                 if 'priority' not in g:
@@ -331,6 +334,11 @@ def buildUserGameList(player, wishlist=False, debug=False):
                 foundGame['thumbnail'] = 'https://steamcdn-a.akamaihd.net/steam/apps/' + userAppId +'/header_292x136.jpg'
                 foundGame['steam_url'] = 'http://store.steampowered.com/app/' + userAppId
                 gameList.append(foundGame)
+            # Mark wishlist items whichever branch added them (wishlist items
+            # have a priority; owned games don't). Only the cached-game branch
+            # above did this before, so new games lost their wishlist flag.
+            if 'priority' in g and len(gameList) > listLength:
+                gameList[-1]['wishlist'] = True
     gameData['games'] = gameList
     return gameData
 
@@ -399,6 +407,37 @@ def getUserWishlist(player):
         return []
 
 
+def getPrices(appids):
+    # Current store prices, fetched live because they change. appdetails takes
+    # many appids at once when filtered to price_overview. Returns
+    # {appid: price} for the games that have a price; free, unreleased and
+    # delisted games are left out.
+    prices = {}
+    appids = list(appids)
+    for i in range(0, len(appids), 100):
+        chunk = appids[i:i + 100]
+        try:
+            r = requests.get(steamGameInfoBaseURI + 'appdetails',
+                             params={'appids': ','.join(str(a) for a in chunk),
+                                     'filters': 'price_overview',
+                                     'cc': settings.get('countryCode', 'us')},
+                             timeout=30)
+            r.raise_for_status()
+            data = r.json()
+        except (requests.RequestException, ValueError) as e:
+            print('Could not get prices: ' + str(e))
+            continue
+        for appid in chunk:
+            entry = data.get(str(appid)) or {}
+            details = entry.get('data')
+            if entry.get('success') and isinstance(details, dict) and 'price_overview' in details:
+                price = details['price_overview']
+                prices[appid] = {'final': price['final_formatted'],
+                                 'initial': price['initial_formatted'],
+                                 'discount_percent': price['discount_percent']}
+    return prices
+
+
 # APPLICATION ROUTE
 
 @app.errorhandler(404)
@@ -461,6 +500,14 @@ def fullCompare():
                 games.append(game)
             else:
                 print ('the value of list was ' + str(list) + '...')
+        # zipLists turns 'wishlist' into the list of players who wishlisted it.
+        prices = getPrices(g['appid'] for g in games if g.get('wishlist'))
+        for game in games:
+            if game.get('wishlist'):
+                game['price'] = prices.get(game['appid'])
+                # Players who own it: everyone listed for the game who didn't wishlist it.
+                wishlisters = {p['steamid'] for p in game['wishlist']}
+                game['owners'] = [p for p in game['users'] if p['steamid'] not in wishlisters]
         master['games'] = games
         printSharedGames(master)
         return jsonify(master)
