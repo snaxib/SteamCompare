@@ -12,45 +12,157 @@
         function setWishlist(on){
             document.getElementById('root').dataset.wishlist = on ? "on" : "off";
         }
+        // The Add Player box takes a SteamID64, a profile link, a custom URL
+        // name or a display name. Exact matches are added straight away;
+        // otherwise the matches are listed to pick from.
         function getPlayers(){
             event.preventDefault();
-            playerId = document.players.player.value;
-            payload = JSON.stringify({"players":[playerId]})
+            const query = document.players.player.value.trim();
+            const picker = document.getElementById('playerPicker');
+            if (query == "") {
+                return false;
+            }
+            picker.textContent = "Searching...";
             var xhttp = new XMLHttpRequest();
-            xhttp.open("POST",'/steamcompare/steamuserlookup', true);
+            xhttp.open("POST",'/steamcompare/search', true);
             xhttp.setRequestHeader("Content-Type","application/json");
             xhttp.onload = function(){
-                playerDataRaw = JSON.parse(xhttp.responseText);
-                const app = document.getElementById('root');
-                var playerContainerExists = document.getElementById("playerContainer");
-                if (playerContainerExists == null){
-                    container = document.createElement('div');
-                    container.setAttribute("class","playerContainer");
-                    container.setAttribute("id","playerContainer");
-                    app.appendChild(container);
+                picker.textContent = "";
+                if (xhttp.status != 200){
+                    picker.textContent = "Search failed, try again.";
+                    return;
+                }
+                const data = JSON.parse(xhttp.responseText);
+                if (data.results.length == 0){
+                    picker.textContent = 'No players found for "' + query + '".';
+                }
+                else if (data.exact){
+                    addPlayer(data.results[0]);
+                    document.players.player.value = "";
                 }
                 else {
-                    container = playerContainerExists;
+                    data.results.forEach(function(result){
+                        const row = document.createElement('div');
+                        row.setAttribute('class', 'pickerRow');
+                        const avatar = document.createElement('img');
+                        avatar.setAttribute('src', result.avatarURI);
+                        avatar.setAttribute('height', 40);
+                        avatar.setAttribute('width', 40);
+                        const text = document.createElement('div');
+                        const name = document.createElement('div');
+                        name.setAttribute('class', 'pickerName');
+                        name.textContent = result.name;
+                        const details = document.createElement('div');
+                        details.setAttribute('class', 'pickerDetails');
+                        details.textContent = result.details || "";
+                        text.appendChild(name);
+                        text.appendChild(details);
+                        const profile = document.createElement('a');
+                        profile.setAttribute('href', result.profileURI);
+                        profile.setAttribute('target', '_blank');
+                        profile.setAttribute('rel', 'noopener');
+                        profile.textContent = "Profile";
+                        const add = document.createElement('button');
+                        add.setAttribute('type', 'button');
+                        add.textContent = "Add";
+                        add.onclick = function(){
+                            addPlayer(result);
+                            picker.textContent = "";
+                            document.players.player.value = "";
+                        };
+                        row.appendChild(add);
+                        row.appendChild(avatar);
+                        row.appendChild(text);
+                        row.appendChild(profile);
+                        picker.appendChild(row);
+                    });
                 }
-                playerRow = document.createElement('div');
-                playerRow.setAttribute('class','playerRow');
-                playerInfo = document.createElement('div');
-                playerInfo.setAttribute("class","playerName");
-                playerImageCell = document.createElement('div');
-                playerImageCell.setAttribute("class","playerImage");
-                playerImage = document.createElement("img");
-                playerRow.appendChild(playerImageCell);
-                playerRow.appendChild(playerInfo);
-                container.appendChild(playerRow);
-                playerImageCell.appendChild(playerImage);
-                playerInfo.textContent = playerDataRaw.players[0].name;
-                playerImage.setAttribute("src",playerDataRaw.players[0].avatarURI);
-                playerImage.setAttribute("height", 64);
-                playerImage.setAttribute("width", 64);
-                players.push(playerDataRaw.players[0].steamid);
-                console.log(players);
             }
-            xhttp.send(payload)         
+            xhttp.send(JSON.stringify({"query": query}));
+            return false;
+        }
+        // player: {steamid, name, avatarURI}
+        function addPlayer(player){
+            if (players.indexOf(player.steamid) > -1){
+                return;
+            }
+            const app = document.getElementById('root');
+            var playerContainerExists = document.getElementById("playerContainer");
+            if (playerContainerExists == null){
+                container = document.createElement('div');
+                container.setAttribute("class","playerContainer");
+                container.setAttribute("id","playerContainer");
+                app.appendChild(container);
+            }
+            else {
+                container = playerContainerExists;
+            }
+            playerRow = document.createElement('div');
+            playerRow.setAttribute('class','playerRow');
+            playerInfo = document.createElement('div');
+            playerInfo.setAttribute("class","playerName");
+            playerImageCell = document.createElement('div');
+            playerImageCell.setAttribute("class","playerImage");
+            playerImage = document.createElement("img");
+            playerRow.appendChild(playerImageCell);
+            playerRow.appendChild(playerInfo);
+            container.appendChild(playerRow);
+            playerImageCell.appendChild(playerImage);
+            const playerName = document.createElement('div');
+            playerName.textContent = player.name;
+            const playerStatus = document.createElement('div');
+            playerStatus.setAttribute('class', 'playerStatus');
+            playerStatus.textContent = "Checking privacy...";
+            playerInfo.appendChild(playerName);
+            playerInfo.appendChild(playerStatus);
+            playerImage.setAttribute("src",player.avatarURI);
+            playerImage.setAttribute("height", 64);
+            playerImage.setAttribute("width", 64);
+            players.push(player.steamid);
+            console.log(players);
+            checkPlayerStatus(player.steamid, playerStatus);
+        }
+        // Shows whether the player's games and wishlist are public. Wishlists
+        // follow Steam's "Game details" privacy setting.
+        function checkPlayerStatus(steamid, statusDiv){
+            var xhttp = new XMLHttpRequest();
+            xhttp.open("POST", "/steamcompare/playerstatus", true);
+            xhttp.setRequestHeader("Content-Type","application/json");
+            xhttp.onload = function(){
+                if (xhttp.status != 200){
+                    statusDiv.textContent = "Couldn't check privacy.";
+                    return;
+                }
+                const s = JSON.parse(xhttp.responseText);
+                statusDiv.textContent = "";
+                if (s.games_public === false){
+                    statusDiv.classList.add("private");
+                    statusDiv.appendChild(document.createTextNode("Games and wishlist are private. "));
+                    const fix = document.createElement('a');
+                    fix.setAttribute('href', 'https://steamcommunity.com/profiles/' + steamid + '/edit/settings');
+                    fix.setAttribute('target', '_blank');
+                    fix.setAttribute('rel', 'noopener');
+                    fix.textContent = "Set Game details to Public";
+                    statusDiv.appendChild(fix);
+                }
+                else if (s.games_public === true){
+                    const games = s.game_count + " games";
+                    const wishlist = s.wishlist_count > 0
+                        ? "wishlist: " + s.wishlist_count + " games"
+                        : "wishlist: public, empty";
+                    statusDiv.textContent = games + ", " + wishlist;
+                }
+                else {
+                    statusDiv.textContent = "Couldn't check privacy.";
+                }
+            };
+            xhttp.onerror = function(){ statusDiv.textContent = "Couldn't check privacy."; };
+            xhttp.send(JSON.stringify({"steamid": steamid}));
+        }
+        function setComparing(running, message){
+            document.getElementById('compareButton').disabled = running;
+            document.getElementById('spinner').style.display = running ? "inline-block" : "none";
+            document.getElementById('compareMessage').textContent = message;
         }
         function handleClick() {
             event.preventDefault();
@@ -62,9 +174,23 @@
             var xhttp = new XMLHttpRequest();
             xhttp.open("POST","/steamcompare/full", true);
             xhttp.setRequestHeader("Content-Type","application/json");
+            setComparing(true, "Comparing libraries... new games are looked up on Steam, so this can take a few minutes.");
+            xhttp.onerror = function(){
+                setComparing(false, "The compare failed: couldn't reach the server.");
+            };
             xhttp.onload = function(){
                 console.log("Got Return!");
+                if (xhttp.status != 200){
+                    setComparing(false, "The compare failed (HTTP " + xhttp.status + "). Try again in a few minutes.");
+                    return;
+                }
                 var gameReturn = JSON.parse(xhttp.responseText);
+                // errors: [{steamid: message}], e.g. a player whose game details are private.
+                const problems = [];
+                gameReturn.errors.forEach(function(e){
+                    Object.values(e).forEach(function(message){ problems.push(message); });
+                });
+                setComparing(false, problems.join(" "));
                 gameReturn.games.forEach(function(game){
                     console.log(game.name);
                     var numPlayers = 0;
@@ -184,6 +310,53 @@
 .playerName{
   vertical-align: center;
 }
+.playerStatus {
+  font-size: 0.85em;
+}
+.playerStatus.private {
+  color: darkred;
+  font-weight: bold;
+}
+.spinner {
+  display: none;
+  width: 16px;
+  height: 16px;
+  margin: 0 0.5pc;
+  vertical-align: middle;
+  border: 3px solid lightgrey;
+  border-top-color: darkslateblue;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+#playerPicker {
+  max-height: 24pc;
+  overflow-y: auto;
+  width: 32pc;
+  margin: 0.5pc 0;
+}
+.pickerRow {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.6pc;
+  padding: 3px;
+  background-color: darkgrey;
+}
+.pickerRow:nth-child(odd) {
+  background-color: dimgrey;
+}
+.pickerRow > div {
+  flex: 1;
+}
+.pickerName {
+  font-weight: bold;
+}
+.pickerDetails {
+  font-size: 0.85em;
+}
 .userContainer{
     display: flex;
     flex-direction: column;
@@ -261,12 +434,15 @@
     <body>
     
     <form name="players" onSubmit="return getPlayers()">
-         Player id:
-         <input type="text" name="player" />
+         Player:
+         <input type="text" name="player" size="40" placeholder="Name, custom URL, profile link or Steam ID" />
          <input name="Submit" type="submit" value="Add Player" />
     </form>
+    <div id="playerPicker"></div>
     <form name="yourForm" onSubmit="return handleClick()">
-            <input name="Submit"  type="submit" value="Compare Libraries" />
+            <input name="Submit" id="compareButton" type="submit" value="Compare Libraries" />
+            <span id="spinner" class="spinner" role="status" aria-label="Comparing"></span>
+            <span id="compareMessage"></span>
         </form>
     <div class="filters">
         Show:
