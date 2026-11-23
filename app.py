@@ -85,7 +85,7 @@ steamGameInfoBaseURI = 'http://store.steampowered.com/api/'
 steamPlayerInfoBaseURI = 'http://api.steampowered.com/'
 steamPlayerIDBaseURI = 'https://steamcommunity.com/id/'
 steamMediaBaseURI = 'http://media.steampowered.com/steamcommunity/public/images/apps/'
-steamWishlistBaseURI = 'https://store.steampowered.com/wishlist/profiles/'
+steamWishlistBaseURI = 'https://api.steampowered.com/IWishlistService/GetWishlist/v1/'
 
 # A filler DB entry for games that have no categories
 
@@ -152,8 +152,16 @@ def lookupSingle(gameID):
     if gameData is not None:
         return gameData
     else:
-        r = requests.get(steamGameInfoBaseURI + 'appdetails?appids='
-                         + str(gameID))
+        # The store rate-limits appdetails (a 429 with no JSON body, or no reply
+        # at all). Treat that like 'null': skip the game for now; it gets cached
+        # on a later compare.
+        try:
+            r = requests.get(steamGameInfoBaseURI + 'appdetails?appids='
+                             + str(gameID), timeout=30)
+        except requests.RequestException:
+            return 0, None
+        if r.status_code != 200:
+            return 0, None
         gameJSON = json.loads(r.text)
         if r.text == 'null':
             return 0, gameJSON
@@ -260,12 +268,13 @@ def buildUserGameList(player, wishlist=False, debug=False):
             elif gameStatus[0] == 1:
 
         # This is the success=false case
-                gamedb.insert_one({'name':g['name'],
+                # Wishlist items have no name, and GetOwnedGames no longer returns img_logo_url.
+                gamedb.insert_one({'name':g.get('name', 'App ' + userAppId),
                                 'appid':g['appid'],
                                 'categories':[nullCategory],
                                 'unavailable':True})
                 newGame = gamedb.find_one({'appid':int(userAppId)},{'_id': False})
-                newGame['thumbnail'] = steamMediaBaseURI + userAppId + '/' + g['img_logo_url'] + '.jpg'
+                newGame['thumbnail'] = 'https://steamcdn-a.akamaihd.net/steam/apps/' + userAppId +'/header_292x136.jpg'
                 newGame['steam_url'] = 'http://store.steampowered.com/app/' + userAppId
                 gameList.append(newGame)
             elif gameStatus[0] == 2:
@@ -284,7 +293,7 @@ def buildUserGameList(player, wishlist=False, debug=False):
             # We do not have an ID with the game we searched for
 
                         if 'categories' in gameDetails[userAppId]['data']:
-                            gamedb.insert_one({'name':g['name'],
+                            gamedb.insert_one({'name':g.get('name', gameDetails[userAppId]['data']['name']),
                                             'appid':g['appid'],
                                             'categories':gameDetails[userAppId]['data']['categories'],
                                             'platforms':gameDetails[userAppId]['data']['platforms'],
@@ -294,7 +303,7 @@ def buildUserGameList(player, wishlist=False, debug=False):
                             newGame['steam_url'] = 'http://store.steampowered.com/app/' + userAppId
                             gameList.append(newGame)
                         else:
-                            gamedb.insert_one({'name':g['name'],
+                            gamedb.insert_one({'name':g.get('name', gameDetails[userAppId]['data']['name']),
                                             'appid':g['appid'],
                                             'categories':[nullCategory],
                                             'platforms':gameDetails[userAppId]['data']['platforms'],
@@ -315,9 +324,9 @@ def buildUserGameList(player, wishlist=False, debug=False):
                 newGame = newGameRaw[userAppId]['data']
                 gamedb.insert_one({'appid':newGame['steam_appid'],
                                     'name':newGame['name'],
-                                    'categories':newGame['categories'],
-                                    'platforms':newGame['platforms'],
-                                    'is_free':newGame['is_free']})
+                                    'categories':newGame.get('categories', [nullCategory]),
+                                    'platforms':newGame.get('platforms', {}),
+                                    'is_free':newGame.get('is_free', False)})
                 foundGame = gamedb.find_one({'appid':int(userAppId)},{'_id': False})
                 foundGame['thumbnail'] = 'https://steamcdn-a.akamaihd.net/steam/apps/' + userAppId +'/header_292x136.jpg'
                 foundGame['steam_url'] = 'http://store.steampowered.com/app/' + userAppId
@@ -378,12 +387,16 @@ def getPlayerData(player):
 
 
 def getUserWishlist(player):
-    wishlist=[]
-    r = requests.get(steamWishlistBaseURI
-                    + str(player.steamId))
-    wishlistRaw = re.search(r'(?<=g_rgWishlistData = )[a-zA-Z\[\]\{\}":0-9,]+', r.text)
-    wishlist = json.loads(wishlistRaw.group(0))
-    return wishlist
+    # Steam's wishlist page no longer embeds g_rgWishlistData, so use the API.
+    # Each item has appid and priority; buildUserGameList uses priority to
+    # mark wishlisted games. Private or empty wishlists give an empty list.
+    try:
+        r = requests.get(steamWishlistBaseURI, params={'steamid': player.steamId}, timeout=30)
+        r.raise_for_status()
+        return r.json().get('response', {}).get('items', [])
+    except (requests.RequestException, ValueError) as e:
+        print('Could not get the wishlist for ' + str(player.name) + ': ' + str(e))
+        return []
 
 
 # APPLICATION ROUTE
