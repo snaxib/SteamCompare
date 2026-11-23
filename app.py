@@ -2,6 +2,8 @@ import requests
 import json
 import time
 import re
+import html
+import secrets
 from pymongo import MongoClient
 import datetime
 import xml.etree.ElementTree as ET
@@ -86,6 +88,9 @@ steamPlayerInfoBaseURI = 'http://api.steampowered.com/'
 steamPlayerIDBaseURI = 'https://steamcommunity.com/id/'
 steamMediaBaseURI = 'http://media.steampowered.com/steamcommunity/public/images/apps/'
 steamWishlistBaseURI = 'https://api.steampowered.com/IWishlistService/GetWishlist/v1/'
+steamCommunitySearchURI = 'https://steamcommunity.com/search/SearchCommunityAjax'
+# A SteamID64 is this plus the 32-bit account ID.
+steamID64Base = 76561197960265728
 
 # A filler DB entry for games that have no categories
 
@@ -407,6 +412,57 @@ def getUserWishlist(player):
         return []
 
 
+def resolveVanity(name):
+    # The custom URL name in steamcommunity.com/id/<name>. Returns a SteamID64 or None.
+    try:
+        r = requests.get(steamPlayerInfoBaseURI + 'ISteamUser/ResolveVanityURL/v1/',
+                         params={'key': webKey, 'vanityurl': name}, timeout=15)
+        response = r.json()['response']
+    except (requests.RequestException, ValueError, KeyError) as e:
+        print('Could not resolve custom URL ' + name + ': ' + str(e))
+        return None
+    if response.get('success') == 1:
+        return response['steamid']
+    return None
+
+
+def searchPlayersByName(query):
+    # Steam has no API for display names, so this uses the search behind
+    # steamcommunity.com/search/users. It isn't an official API. It wants a
+    # sessionid cookie that matches the sessionid parameter; any value works.
+    # Returns the first page (up to 20) of matching profiles.
+    session = secrets.token_hex(12)
+    try:
+        r = requests.get(steamCommunitySearchURI,
+                         params={'text': query, 'filter': 'users', 'sessionid': session,
+                                 'steamid_user': 'false', 'page': 1},
+                         cookies={'sessionid': session}, timeout=15)
+        r.raise_for_status()
+        page = r.json().get('html', '')
+    except (requests.RequestException, ValueError) as e:
+        print('Player search failed: ' + str(e))
+        return []
+    results = []
+    for row in page.split('class="search_row"')[1:]:
+        account = re.search(r'data-miniprofile="(\d+)"', row)
+        persona = re.search(r'class="searchPersonaName" href="([^"]+)">([^<]*)</a>', row)
+        if not account or not persona:
+            continue
+        avatar = re.search(r'<img src="([^"]+)"', row)
+        # Real name and location, when the profile shows them.
+        info = re.search(r'class="searchPersonaName"[^>]*>[^<]*</a><br />(.*?)</div>', row, re.S)
+        details = ''
+        if info:
+            details = html.unescape(re.sub(r'<[^>]+>', ' ', info.group(1)))
+            details = ' '.join(details.split())
+        results.append({'steamid': str(steamID64Base + int(account.group(1))),
+                        'name': html.unescape(persona.group(2)),
+                        'avatarURI': avatar.group(1) if avatar else '',
+                        'profileURI': persona.group(1),
+                        'details': details})
+    return results
+
+
 def getPrices(appids):
     # Current store prices, fetched live because they change. appdetails takes
     # many appids at once when filtered to price_overview. Returns
@@ -528,6 +584,70 @@ def single():
             return jsonify(gameResult), 200
     else:
         abort(401)
+
+# Find players for the Add Player box. A SteamID64 or profile link names one
+# player ('exact': true). Anything else is a custom URL name or a display name:
+# the custom URL match (if any) comes first, then display-name matches.
+@app.route('/steamcompare/search', methods=['POST'])
+def playerSearch():
+    if not request.data:
+        abort(401)
+    query = str(request.get_json(force=True).get('query', '')).strip()
+    if not query:
+        return jsonify({'exact': False, 'results': []})
+
+    link = re.search(r'steamcommunity\.com/(id|profiles)/([^/?#\s]+)', query)
+    steamid = None
+    if link and link.group(1) == 'profiles':
+        steamid = link.group(2)
+    elif link:
+        steamid = resolveVanity(link.group(2))
+    elif re.fullmatch(r'7656119\d{10}', query):
+        steamid = query
+    if link or steamid:
+        player = getPlayerData(steamid) if steamid else 2
+        results = [] if isinstance(player, int) else [playersToDict(player)]
+        return jsonify({'exact': True, 'results': results})
+
+    results = []
+    vanityID = resolveVanity(query)
+    if vanityID:
+        player = getPlayerData(vanityID)
+        if not isinstance(player, int):
+            match = playersToDict(player)
+            match['details'] = 'Custom URL: steamcommunity.com/id/' + query
+            results.append(match)
+    for match in searchPlayersByName(query):
+        if match['steamid'] != vanityID:
+            results.append(match)
+    return jsonify({'exact': False, 'results': results})
+
+# Whether a player's games and wishlist are visible. Steam has no separate
+# wishlist privacy setting: wishlists are part of "Game details". The wishlist
+# API returns the same empty response for a private wishlist and an empty one,
+# so a public game list is what tells them apart.
+@app.route('/steamcompare/playerstatus', methods=['POST'])
+def playerStatus():
+    if not request.data:
+        abort(401)
+    steamid = str(request.get_json(force=True).get('steamid', ''))
+    if not re.fullmatch(r'7656119\d{10}', steamid):
+        abort(400)
+    status = {'steamid': steamid, 'games_public': None, 'game_count': None, 'wishlist_count': None}
+    try:
+        owned = requests.get(steamOwnedGamesBaseURI + 'IPlayerService/GetOwnedGames/v1/',
+                             params={'key': webKey, 'steamid': steamid,
+                                     'include_played_free_games': 1},
+                             timeout=15).json()['response']
+        status['games_public'] = owned != {}
+        status['game_count'] = owned.get('game_count')
+        if status['games_public']:
+            count = requests.get('https://api.steampowered.com/IWishlistService/GetWishlistItemCount/v1/',
+                                 params={'steamid': steamid}, timeout=15).json()['response']
+            status['wishlist_count'] = count.get('count', 0)
+    except (requests.RequestException, ValueError, KeyError) as e:
+        print('Could not get the status for ' + steamid + ': ' + str(e))
+    return jsonify(status)
 
 # Lookup a user's data, returning a Player Object
 @app.route('/steamcompare/steamuserlookup', methods=['POST'])
