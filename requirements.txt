@@ -1,5 +1,5 @@
 # app.py imports Markup from flask, which Flask 3 removed. Keep Flask on 2.x.
-Flask==2.3.3
+Flask==3.1.3
 gunicorn==23.0.0
 pymongo==4.15.5
 requests==2.32.5
